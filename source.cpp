@@ -14,10 +14,10 @@ float q[N][3];
 float v[N][3];
 float a[N][3];
 float T = 0, P = 0, E = 0;
-int step = 0, total = 2000;
-int t = 0, dt = 1, t_diag = 5, t_snap = 5;
+int step = 0, total = 10000, step_diag = 5, step_snap = 5;
+float t = 0, dt = 0.1;
 
-float cell_size = 500;
+float cell_size = 250;
 
 ofstream dump;
 ofstream diag;
@@ -33,6 +33,8 @@ void boundaries(int i);
 void diagnose();
 
 void snapshot();
+
+void dump_vel();
 
 int main()
 {
@@ -56,7 +58,7 @@ int main()
         evolve();
         // cout << step << endl;
     }
-
+    dump_vel();
     dump.close();
     diag.close();
 }
@@ -90,14 +92,31 @@ void interract(int i, int j)
     r[1] = q[i][1] - q[j][1];
     r[2] = q[i][2] - q[j][2];
 
-    float k = pow((r[0] * r[0] + r[1] * r[1] + r[2] * r[2] + 0.1), 1.5);
-    float p = pow((r[0] * r[0] + r[1] * r[1] + r[2] * r[2] +0.1), -0.5);
+    float r2 = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+    float k = 0;
+    float p = 0;
+    if(r2<0.1)
+      r2=0.1;
+    k = pow(r2, -1.5);
+    p = pow(r2, -0.5);
+
+    /*if (r2 > 1)
+    {
+        k = -pow((r[0] * r[0] + r[1] * r[1] + r[2] * r[2]), -1.5);
+        p = pow((r[0] * r[0] + r[1] * r[1] + r[2] * r[2]), -0.5);
+    }
+    else
+    {
+        k = -24 * (2 * pow((r[0] * r[0] + r[1] * r[1] + r[2] * r[2]), -7) -
+                   pow((r[0] * r[0] + r[1] * r[1] + r[2] * r[2]), -4));
+        p = (pow((r[0] * r[0] + r[1] * r[1] + r[2] * r[2]), -6) - pow((r[0] * r[0] + r[1] * r[1] + r[2] * r[2]), -3));
+    }*/
     P += p;
 
     for (int iter = 0; iter < 3; iter++)
     {
-        a[i][iter] += r[iter] / k;
-        a[j][iter] += -r[iter] / k;
+        a[i][iter] += r[iter] * k;
+        a[j][iter] += -r[iter] * k;
     }
 
     // TODO: Calculate P here
@@ -124,17 +143,17 @@ void evolve()
         for (int j = 0; j < 3; j++)
         {
             v[i][j] += a[i][j] * dt;
-            q[i][j] += v[i][j] * dt + a[i][j] * dt * dt / 2;
+            q[i][j] += v[i][j] * dt; // + a[i][j] * dt * dt / 2;
         }
         boundaries(i);
     }
 
     t += dt;
 
-    if ((t % t_diag) == 0)
+    if ((step % step_diag) == 0)
         diagnose();
 
-    if ((t % t_snap) == 0)
+    if ((step % step_snap) == 0)
         snapshot();
 
     E = P = T = 0;
@@ -143,18 +162,30 @@ void evolve()
 
 void boundaries(int i)
 {
-    if (q[i][0] < -cell_size * 0.5)
-        q[i][0] += cell_size;
-    if (q[i][0] > cell_size * 0.5)
-        q[i][0] -= cell_size;
-    if (q[i][1] < -cell_size * 0.5)
-        q[i][1] += cell_size;
-    if (q[i][1] > cell_size * 0.5)
-        q[i][1] -= cell_size;
-    if (q[i][2] < -cell_size * 0.5)
-        q[i][2] += cell_size;
-    if (q[i][2] > cell_size * 0.5)
-        q[i][2] -= cell_size;
+    /*for (int j = 0; j < 3; j++)
+    {
+        if (q[i][j] > cell_size)
+        {
+            v[i][j] = -v[i][j];
+            q[i][j] -= 2 * (q[i][j] - cell_size);
+        }
+        if ((-q[i][j]) > cell_size)
+        {
+            v[i][j] = -v[i][j];
+            q[i][j] += 2 * (-q[i][j] - cell_size);
+        }
+    }*/
+    for (int j = 0; j < 3; j++)
+    {
+        if (q[i][j] > cell_size)
+        {
+            q[i][j] -= 2 * cell_size;
+        }
+        if ((-q[i][j]) > cell_size)
+        {
+            q[i][j] += 2 * cell_size;
+        }
+    }
 }
 
 void diagnose()
@@ -174,7 +205,22 @@ void snapshot()
 
     for (int i = 0; i < N; i++)
     {
-        dump << q[i][0] << " " << q[i][1] << " " << q[i][2] << " " << endl;
+        dump << q[i][0] << " " << q[i][1] << " " << q[i][2] << " ";
+        dump << v[i][0] << " " << v[i][1] << " " << v[i][2] << " " << endl;
     }
     diag << N << "," << step << "," << P << "," << T << "," << E << endl;
+}
+
+void dump_vel()
+{
+  ofstream vel;
+  vel.open("velocity.csv", ios::out);
+  vel << "vx,vy,vz,v" << endl;
+  for (int i = 0; i < N; i++) {
+    vel<<v[i][0]<<",";
+    vel<<v[i][1]<<",";
+    vel<<v[i][2]<<",";
+    vel<<v[i][0]*v[i][0]+v[i][1]*v[i][1]+v[i][2]*v[i][2]<<endl;
+  }
+  vel.close();
 }
