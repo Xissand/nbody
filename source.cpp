@@ -24,13 +24,13 @@ ofstream diag;
 
 void generate();
 
-void interract(int i, int j);
+void interract(int i, int j); //TODO: Move to particle interraction to CUDA
 
-void evolve();
+void evolve(); //TODO: Move to system evolution CUDA and leave calling functions in cpp
 
-void boundaries(int i);
+void boundaries(int i); //TODO: Move to CUDA??
 
-void diagnose();
+void diagnose(); //TODO: Move energy calculation to CUDA
 
 void snapshot();
 
