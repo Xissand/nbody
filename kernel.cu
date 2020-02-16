@@ -72,7 +72,7 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
     q.z += v.z * dt;
     // q.w = e_pot / 2.0f + e_kin;
 
-    if (q.x > cell_size)
+    /*if (q.x > cell_size)
         q.x -= 2 * cell_size;
     if ((-q.x) > cell_size)
         q.x += 2 * cell_size;
@@ -83,13 +83,13 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
     if (q.z > cell_size)
         q.z -= 2 * cell_size;
     if ((-q.z) > cell_size)
-        q.z += 2 * cell_size;
+        q.z += 2 * cell_size;*/
 
     e.x += e_pot / 2;
     e.y += e_kin;
     e.z += e_pot / 2 + e_kin;
 
-    /*if (q.x > cell_size)
+    if (q.x > cell_size)
     {
             q.x -= 2*(q.x-cell_size);
             v.x = -v.x;
@@ -119,7 +119,7 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
             q.z += 2*(-q.z - cell_size);
             v.z = -v.z;
     }
-*/
+
 
     __syncthreads();
 
@@ -169,9 +169,9 @@ int main()
     cudaMemcpy(device_v, host_v, sizeof(float4) * N, cudaMemcpyHostToDevice);
     cudaMemcpy(device_e, host_e, sizeof(float3) * N, cudaMemcpyHostToDevice);
 
-    for (int t = 0; t < 20000; t++)
+    for (int t = 0; t < 10000; t++)
     {
-        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, N, 0.1, device_e);
+        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, N, 0.01, device_e);
         if (t % 5 == 0)
         {
             E = E_POT = E_KIN = 0.0f;
