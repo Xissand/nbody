@@ -1,8 +1,8 @@
 #include "cuda_runtime.h"
 //#include "kernel.h"
 #include "device_launch_parameters.h"
-#include <stdio.h>
 #include <cmath>
+#include <stdio.h>
 
 #define BLOCK_SIZE 256
 const int cell_size = 250;
@@ -23,6 +23,21 @@ __device__ void interract(float4 qi, float4 qj, float3& ai, float& p)
     r.x = qi.x - qj.x;
     r.y = qi.y - qj.y;
     r.z = qi.z - qj.z;
+
+    // Periodic boundary checks
+
+    if (r.x > cell_size)
+        r.x -= 2 * cell_size;
+    if (r.x <= -cell_size)
+        r.x += 2 * cell_size;
+    if (r.y > cell_size)
+        r.y -= 2 * cell_size;
+    if (r.y <= -cell_size)
+        r.y += 2 * cell_size;
+    if (r.z > cell_size)
+        r.z -= 2 * cell_size;
+    if (r.z <= -cell_size)
+        r.z += 2 * cell_size;
 
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
     if (r2 < 0.01)
@@ -71,9 +86,8 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
     q.x += v.x * dt;
     q.y += v.y * dt;
     q.z += v.z * dt;
-    // q.w = e_pot / 2.0f + e_kin;
 
-    /*if (q.x > cell_size)
+    if (q.x > cell_size)
         q.x -= 2 * cell_size;
     if ((-q.x) > cell_size)
         q.x += 2 * cell_size;
@@ -84,48 +98,47 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
     if (q.z > cell_size)
         q.z -= 2 * cell_size;
     if ((-q.z) > cell_size)
-        q.z += 2 * cell_size;*/
+        q.z += 2 * cell_size;
 
     e.x += e_pot / 2;
     e.y += e_kin;
     e.z += e_pot / 2 + e_kin;
 
+    // Reflective boundaries
+    /*
     if (q.x > cell_size)
     {
-            q.x -= 2*(q.x-cell_size);
-            v.x = -v.x;
+        q.x -= 2 * (q.x - cell_size);
+        v.x = -v.x;
     }
     if (q.x < -cell_size)
     {
-            q.x += 2*(-q.x - cell_size);
-            v.x = -v.x;
+        q.x += 2 * (-q.x - cell_size);
+        v.x = -v.x;
     }
     if (q.y > cell_size)
     {
-            q.y -= 2*(q.y-cell_size);
-            v.y = -v.y;
+        q.y -= 2 * (q.y - cell_size);
+        v.y = -v.y;
     }
     if (q.y < -cell_size)
     {
-            q.y += 2*(-q.y - cell_size);
-            v.y = -v.y;
+        q.y += 2 * (-q.y - cell_size);
+        v.y = -v.y;
     }
     if (q.z > cell_size)
     {
-            q.z -= 2*(q.z-cell_size);
-            v.z = -v.z;
+        q.z -= 2 * (q.z - cell_size);
+        v.z = -v.z;
     }
     if (q.z < -cell_size)
     {
-            q.z += 2*(-q.z - cell_size);
-            v.z = -v.z;
+        q.z += 2 * (-q.z - cell_size);
+        v.z = -v.z;
     }
-
-
+    /*  */
     __syncthreads();
 
-    // E_POT += e_pot;
-    // E_KIN += e_kin;
     d_q[j] = q;
     d_v[j] = v;
     d_e[j] = e;
@@ -133,29 +146,30 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
 
 void generate()
 {
-  int grid_size = (int)truncf(2*cell_size/(cbrtf(N)));
-  int limit = (int)truncf(cbrtf(N));
+    int grid_size = (int) truncf(2 * cell_size / (cbrtf(N)));
+    int limit = (int) truncf(cbrtf(N));
 
-  for (int i = 0; i < limit; i++)
-      for (int j = 0; j < limit; j++)
-          for (int k = 0; k < limit; k++)
-          {
-            int n = limit*limit *i + limit * j + k;
-            host_q[n].x = i * grid_size + rand() % grid_size - cell_size;
-            host_q[n].y = j * grid_size + rand() % grid_size - cell_size;
-            host_q[n].z = k * grid_size + rand() % grid_size - cell_size;
-            host_q[n].w = 0;
+    for (int i = 0; i < limit; i++)
+        for (int j = 0; j < limit; j++)
+            for (int k = 0; k < limit; k++)
+            {
+                int n = limit * limit * i + limit * j + k;
+                host_q[n].x = i * grid_size + rand() % grid_size - cell_size;
+                host_q[n].y = j * grid_size + rand() % grid_size - cell_size;
+                host_q[n].z = k * grid_size + rand() % grid_size - cell_size;
+                host_q[n].w = 0;
 
-            host_v[n].x = 0;
-            host_v[n].y = 0;
-            host_v[n].z = 0;
-            host_v[n].w = 1;
+                host_v[n].x = (rand() % 100)/100;
+                host_v[n].y = (rand() % 100)/100;
+                host_v[n].z = (rand() % 100)/100;
+                host_v[n].w = 1;
 
-            host_e[n].x = 0;
-            host_e[n].y = 0;
-            host_e[n].z = 0;
-          }
-
+                host_e[n].x = 0;
+                host_e[n].y = 0;
+                host_e[n].z = 0;
+            }
+    // TODO: implement generation for any number of particles
+    // TODO: implement velocity generation based on temperature
 }
 
 int main()
@@ -169,26 +183,6 @@ int main()
     host_e = (float3*) malloc(sizeof(float3) * N);
 
     generate();
-    /*
-    for (int i = 0; i < 16; i++)
-        for (int j = 0; j < 16; j++)
-            for (int k = 0; k < 16; k++)
-            {
-                host_q[256 * i + 16 * j + k].x = i * 10 + rand() % 10 - 80;
-                host_q[256 * i + 16 * j + k].y = j * 10 + rand() % 10 - 80;
-                host_q[256 * i + 16 * j + k].z = k * 10 + rand() % 10 - 80;
-                host_q[256 * i + 16 * j + k].w = 0;
-
-                host_v[256 * i + 16 * j + k].x = 0;
-                host_v[256 * i + 16 * j + k].y = 0;
-                host_v[256 * i + 16 * j + k].z = 0;
-                host_v[256 * i + 16 * j + k].w = 1;
-
-                host_e[256 * i + 16 * j + k].x = 0;
-                host_e[256 * i + 16 * j + k].y = 0;
-                host_e[256 * i + 16 * j + k].z = 0;
-            }
-      */
 
     FILE* fp;
     fp = fopen("particles.xyz", "w");
@@ -203,9 +197,9 @@ int main()
     cudaMemcpy(device_v, host_v, sizeof(float4) * N, cudaMemcpyHostToDevice);
     cudaMemcpy(device_e, host_e, sizeof(float3) * N, cudaMemcpyHostToDevice);
 
-    for (int step = 0; step < 100000; step++)
+    for (int step = 0; step < 10000; step++)
     {
-        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, N, 0.01, device_e);
+        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, N, 0.1, device_e);
         if (step % 5 == 0)
         {
             E = E_POT = E_KIN = 0.0f;
@@ -215,9 +209,9 @@ int main()
             for (int i = 0; i < N; i++)
             {
                 fprintf(fp, "%f %f %f\n", host_q[i].x, host_q[i].y, host_q[i].z);
-                E+=host_e[i].z;
-                E_POT+=host_e[i].x;
-                E_KIN+=host_e[i].y;
+                E += host_e[i].z;
+                E_POT += host_e[i].x;
+                E_KIN += host_e[i].y;
             }
             fprintf(fp2, "%d,%f,%f,%f\n", step, E_POT, E_KIN, E);
             // printf("energy: %f\n", E);
@@ -225,10 +219,10 @@ int main()
     }
 
     cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
-    float v2=0;
+    float v2 = 0;
     for (int i = 0; i < N; i++)
     {
-        v2 = host_v[i].x*host_v[i].x+host_v[i].y*host_v[i].y+host_v[i].z*host_v[i].z;
+        v2 = host_v[i].x * host_v[i].x + host_v[i].y * host_v[i].y + host_v[i].z * host_v[i].z;
         fprintf(fp3, "%f,%f,%f,%f\n", host_v[i].x, host_v[i].y, host_v[i].z, v2);
     }
 
