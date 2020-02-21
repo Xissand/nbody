@@ -4,9 +4,12 @@
 #include <cmath>
 #include <stdio.h>
 
-#define BLOCK_SIZE 256
+#define REFLECTIVE_BOUNDARIES
+#define COULOMB_POTENTIAL
+
+#define BLOCK_SIZE 128
 const int cell_size = 250;
-#define N 4096
+#define N 32768
 
 float4* device_q;
 float4* device_v;
@@ -15,8 +18,6 @@ float4* host_v;
 float3* device_e;
 float3* host_e;
 
-float E = 0, E_KIN = 0, E_POT = 0;
-
 __device__ void interract(float4 qi, float4 qj, float3& ai, float& p)
 {
     float3 r;
@@ -24,8 +25,8 @@ __device__ void interract(float4 qi, float4 qj, float3& ai, float& p)
     r.y = qi.y - qj.y;
     r.z = qi.z - qj.z;
 
-    // Periodic boundary checks
-
+// Periodic boundary checks
+#ifdef PERIODIC_BOUNDARIES
     if (r.x > cell_size)
         r.x -= 2 * cell_size;
     if (r.x <= -cell_size)
@@ -38,6 +39,7 @@ __device__ void interract(float4 qi, float4 qj, float3& ai, float& p)
         r.z -= 2 * cell_size;
     if (r.z <= -cell_size)
         r.z += 2 * cell_size;
+#endif
 
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
     if (r2 < 0.01)
@@ -45,10 +47,13 @@ __device__ void interract(float4 qi, float4 qj, float3& ai, float& p)
 
     // apparently powf can be more expensive, not sure
     float r_mod = sqrtf(r2);
+
+#ifdef COULOMB_POTENTIAL
     float r3 = r_mod * r_mod * r_mod;
 
     float k = 1.0f / r3;
     p += 1.0f / r_mod;
+#endif
 
     ai.x += r.x * k;
     ai.y += r.y * k;
@@ -87,6 +92,7 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
     q.y += v.y * dt;
     q.z += v.z * dt;
 
+#ifdef PERIODIC_BOUNDARIES
     if (q.x > cell_size)
         q.x -= 2 * cell_size;
     if ((-q.x) > cell_size)
@@ -99,13 +105,14 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
         q.z -= 2 * cell_size;
     if ((-q.z) > cell_size)
         q.z += 2 * cell_size;
+#endif
 
     e.x += e_pot / 2;
     e.y += e_kin;
     e.z += e_pot / 2 + e_kin;
 
-    // Reflective boundaries
-    /*
+// Reflective boundaries
+#ifdef REFLECTIVE_BOUNDARIES
     if (q.x > cell_size)
     {
         q.x -= 2 * (q.x - cell_size);
@@ -136,7 +143,8 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
         q.z += 2 * (-q.z - cell_size);
         v.z = -v.z;
     }
-    /*  */
+#endif
+
     __syncthreads();
 
     d_q[j] = q;
@@ -159,9 +167,9 @@ void generate()
                 host_q[n].z = k * grid_size + rand() % grid_size - cell_size;
                 host_q[n].w = 0;
 
-                host_v[n].x = (rand() % 100)/100;
-                host_v[n].y = (rand() % 100)/100;
-                host_v[n].z = (rand() % 100)/100;
+                host_v[n].x = (rand() % 100) / 10 - 5;
+                host_v[n].y = (rand() % 100) / 10 - 5;
+                host_v[n].z = (rand() % 100) / 10 - 5;
                 host_v[n].w = 1;
 
                 host_e[n].x = 0;
@@ -174,6 +182,11 @@ void generate()
 
 int main()
 {
+    float dt = 0.01;
+    int total_steps = 10000;
+    int snap_steps = 5;
+    float E = 0, E_KIN = 0, E_POT = 0;
+
     cudaMalloc(&device_q, sizeof(float4) * N);
     cudaMalloc(&device_v, sizeof(float4) * N);
     cudaMalloc(&device_e, sizeof(float3) * N);
@@ -197,10 +210,10 @@ int main()
     cudaMemcpy(device_v, host_v, sizeof(float4) * N, cudaMemcpyHostToDevice);
     cudaMemcpy(device_e, host_e, sizeof(float3) * N, cudaMemcpyHostToDevice);
 
-    for (int step = 0; step < 10000; step++)
+    for (int step = 0; step < total_steps; step++)
     {
-        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, N, 0.1, device_e);
-        if (step % 5 == 0)
+        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, N, dt, device_e);
+        if (step % snap_steps == 0)
         {
             E = E_POT = E_KIN = 0.0f;
             cudaMemcpy(host_q, device_q, sizeof(float4) * N, cudaMemcpyDeviceToHost);
@@ -214,7 +227,6 @@ int main()
                 E_KIN += host_e[i].y;
             }
             fprintf(fp2, "%d,%f,%f,%f\n", step, E_POT, E_KIN, E);
-            // printf("energy: %f\n", E);
         }
     }
 
