@@ -2,14 +2,16 @@
 //#include "kernel.h"
 #include "device_launch_parameters.h"
 #include <cmath>
+#include <iostream>
 #include <stdio.h>
 
 #define REFLECTIVE_BOUNDARIES
-#define COULOMB_POTENTIAL
+//#define COULOMB_POTENTIAL
+#define LENNARD_JONES_POTENTIAL
 
-#define BLOCK_SIZE 128
-const int cell_size = 250;
-#define N 32768
+#define BLOCK_SIZE 1
+const int cell_size = 10;
+#define N 64
 
 float4* device_q;
 float4* device_v;
@@ -18,12 +20,15 @@ float4* host_v;
 float3* device_e;
 float3* host_e;
 
-__device__ void interract(float4 qi, float4 qj, float3& ai, float& p)
+__device__ void interract(float4 qi, float4 qj, float3& ai, double& p)
 {
     float3 r;
     r.x = qi.x - qj.x;
     r.y = qi.y - qj.y;
     r.z = qi.z - qj.z;
+
+    if (r.x == 0 && r.y == 0 && r.z == 0)
+        return;
 
 // Periodic boundary checks
 #ifdef PERIODIC_BOUNDARIES
@@ -41,26 +46,43 @@ __device__ void interract(float4 qi, float4 qj, float3& ai, float& p)
         r.z += 2 * cell_size;
 #endif
 
-    float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
-    if (r2 < 0.01)
-        r2 = 0.01;
+    double r2 = r.x * r.x + r.y * r.y + r.z * r.z;
 
+    double k = 0;
     // apparently powf can be more expensive, not sure
-    float r_mod = sqrtf(r2);
+
+#ifdef LENNARD_JONES_POTENTIAL
+    // p=r_12-r_6
+    // f=-r_14+r_8
+
+    double r4 = r2 * r2;
+    double r6 = r4 * r2;
+    double r8 = r4 * r4;
+
+    k = (-(0.5f) + (1.0f / r6)) * 12 / r8;
+    p += (-(1.0f) + (1.0f / r6)) * 1 / r6;
+#endif
 
 #ifdef COULOMB_POTENTIAL
-    float r3 = r_mod * r_mod * r_mod;
+    if (r2 < 0.0001)
+        r2 = 0.0001;
 
-    float k = 1.0f / r3;
+    double r_mod = sqrtf(r2);
+    double r3 = r_mod * r_mod * r_mod;
+
+    k += 1.0f / r3;
     p += 1.0f / r_mod;
 #endif
 
     ai.x += r.x * k;
     ai.y += r.y * k;
     ai.z += r.z * k;
+    // printf("%f\n", r2);
+
+    // printf("%f %f %f\n", ai.x, ai.y, ai.z);
 }
 
-__global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3* d_e)
+__global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, double dt, float3* d_e)
 {
     int j = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -69,7 +91,7 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
     float4 v = d_v[j];
     float3 e = {0.0f, 0.0f, 0.0f};
     float3 currA = {0.0f, 0.0f, 0.0f};
-    float e_pot = 0;
+    double e_pot = 0;
 
     for (int i = 0; i < N_BODIES; i += BLOCK_SIZE)
     {
@@ -86,7 +108,7 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
     v.y += currA.y * dt;
     v.z += currA.z * dt;
 
-    float e_kin = (v.x * v.x + v.y * v.y + v.z * v.z) / 2.0f;
+    double e_kin = (v.x * v.x + v.y * v.y + v.z * v.z) / 2.0f;
 
     q.x += v.x * dt;
     q.y += v.y * dt;
@@ -107,6 +129,7 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float3*
         q.z += 2 * cell_size;
 #endif
 
+    double currA2 = currA.x * currA.x + currA.y * currA.y + currA.z * currA.z;
     e.x += e_pot / 2;
     e.y += e_kin;
     e.z += e_pot / 2 + e_kin;
@@ -167,9 +190,9 @@ void generate()
                 host_q[n].z = k * grid_size + rand() % grid_size - cell_size;
                 host_q[n].w = 0;
 
-                host_v[n].x = (rand() % 100) / 10 - 5;
-                host_v[n].y = (rand() % 100) / 10 - 5;
-                host_v[n].z = (rand() % 100) / 10 - 5;
+                host_v[n].x = 0; //(rand() % 100) / 10 - 5;
+                host_v[n].y = 0; //(rand() % 100) / 10 - 5;
+                host_v[n].z = 0; //(rand() % 100) / 10 - 5;
                 host_v[n].w = 1;
 
                 host_e[n].x = 0;
@@ -182,10 +205,10 @@ void generate()
 
 int main()
 {
-    float dt = 0.01;
-    int total_steps = 10000;
+    double dt = 0.001;
+    int total_steps = 100000;
     int snap_steps = 5;
-    float E = 0, E_KIN = 0, E_POT = 0;
+    double E = 0, E_KIN = 0, E_POT = 0;
 
     cudaMalloc(&device_q, sizeof(float4) * N);
     cudaMalloc(&device_v, sizeof(float4) * N);
@@ -231,7 +254,7 @@ int main()
     }
 
     cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
-    float v2 = 0;
+    double v2 = 0;
     for (int i = 0; i < N; i++)
     {
         v2 = host_v[i].x * host_v[i].x + host_v[i].y * host_v[i].y + host_v[i].z * host_v[i].z;
