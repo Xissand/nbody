@@ -1,5 +1,7 @@
 #Custom
 *.xyz
+.vscode/
+.ipynb_checkpoints/
 
 # Prerequisites
 *.d
