@@ -3,8 +3,11 @@
 #include "device_launch_parameters.h"
 #include "unistd.h"
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <stdio.h>
+
+using namespace std;
 
 #ifdef __INTELLISENSE__
 void __syncthreads();
@@ -17,6 +20,9 @@ void __syncthreads();
 #define BLOCK_SIZE 128
 const int cell_size = 8;
 #define N 4096
+
+int step = 0;
+const int snap_steps = 5;
 
 float4* device_q;
 float4* device_v;
@@ -122,13 +128,11 @@ __device__ void get_virial(float4 qi, float4 qj, float4& e)
 #endif
 
     float3 temp;
-
     temp.x = r.x * k;
     temp.y = r.y * k;
     temp.z = r.z * k;
 
     k = temp.x * r.x + temp.y * r.y + temp.z * r.z;
-
     e.w += k;
 }
 
@@ -189,7 +193,7 @@ __device__ void get_kinetic(float4 v, float4& e)
     e.z += k;
 }
 
-__global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float4* d_e)
+__global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float4* d_e, bool snap)
 {
     int j = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -207,12 +211,16 @@ __global__ void evolve(float4* d_q, float4* d_v, int N_BODIES, float dt, float4*
         for (int k = 0; k < BLOCK_SIZE; k++)
         {
             get_force(q, shared_q[k], currA);
-            get_potential(q, shared_q[k], e);
-            get_virial(q, shared_q[k], e);
+            if (snap)
+            {
+                get_potential(q, shared_q[k], e);
+                get_virial(q, shared_q[k], e);
+            }
         }
         __syncthreads();
     }
-    get_kinetic(v, e);
+    if (snap)
+        get_kinetic(v, e);
 
     v.x += currA.x * dt;
     v.y += currA.y * dt;
@@ -324,12 +332,42 @@ void get_params(float4 e, float4& params)
     params = {P, V, T, 0};
 }
 
+void snapshot(ofstream &particles, ofstream& energy, ofstream& parameters)
+{
+    float E = 0, E_KIN = 0, E_POT = 0, VIRIAL = 0;
+    cudaMemcpy(host_q, device_q, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_e, device_e, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+
+    particles << N << endl << endl;
+
+    for (int i = 0; i < N; i++)
+    {
+        particles << host_q[i].x << " ";
+        particles << host_q[i].y << " ";
+        particles << host_q[i].z << endl;
+
+        E += host_e[i].z;
+        E_POT += host_e[i].x;
+        E_KIN += host_e[i].y;
+        VIRIAL += host_e[i].w;
+    }
+
+    energy << step << ",";
+    energy << E_POT << ",";
+    energy << E_KIN << ",";
+    energy << E << ",";
+    energy << VIRIAL << endl;
+
+    get_params({E_POT, E_KIN, E, VIRIAL}, params);
+    parameters << params.x << ",";
+    parameters << params.y << ",";
+    parameters << params.z << endl;
+}
+
 int main()
 {
     float dt = 0.001;
-    int total_steps = 100000;
-    int snap_steps = 5;
-    float E = 0, E_KIN = 0, E_POT = 0, VIRIAL = 0;
+    int total_steps = 10000;
 
     cudaMalloc(&device_q, sizeof(float4) * N);
     cudaMalloc(&device_v, sizeof(float4) * N);
@@ -341,47 +379,29 @@ int main()
 
     generate();
 
-    FILE* fp;
-    fp = fopen("particles.xyz", "w");
-    FILE* fp2;
-    fp2 = fopen("gpue.csv", "w");
-    fprintf(fp2, "t,Potential,Kinetic,Total,Virial\n");
-    FILE* fp3;
-    fp3 = fopen("gpuv.csv", "w");
-    fprintf(fp3, "vx,vy,vz,v\n");
-    FILE* fp4;
-    fp4 = fopen("gpuparam.csv", "w");
-    fprintf(fp4, "P,V,T\n");
+    ofstream particles("particles.xyz");
+    ofstream energy("gpue.csv");
+    energy << "t,Potential,Kinetic,Total,Virial" << endl;
+    ofstream velocity("gpuv.csv");
+    velocity << "vx,vy,vz,v" << endl;
+    ofstream parameters("gpuparam.csv");
+    parameters << "P,V,T" << endl;
 
     cudaMemcpy(device_q, host_q, sizeof(float4) * N, cudaMemcpyHostToDevice);
     cudaMemcpy(device_v, host_v, sizeof(float4) * N, cudaMemcpyHostToDevice);
     cudaMemcpy(device_e, host_e, sizeof(float4) * N, cudaMemcpyHostToDevice);
 
-    for (int step = 0; step < total_steps; step++)
+    bool snap = false;
+    for (step = 0; step < total_steps; step++)
     {
-#ifndef __INTELLISENSE__
-        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, N, dt, device_e);
-#endif
-
         if (step % snap_steps == 0)
-        {
-            E = E_POT = E_KIN = VIRIAL = 0.0f;
-            cudaMemcpy(host_q, device_q, sizeof(float4) * N, cudaMemcpyDeviceToHost);
-            cudaMemcpy(host_e, device_e, sizeof(float4) * N, cudaMemcpyDeviceToHost);
-            fprintf(fp, "%d\n\n", N);
-            for (int i = 0; i < N; i++)
-            {
-                fprintf(fp, "%f %f %f\n", host_q[i].x, host_q[i].y, host_q[i].z);
-                E += host_e[i].z;
-                E_POT += host_e[i].x;
-                E_KIN += host_e[i].y;
-                VIRIAL += host_e[i].w;
-            }
-            fprintf(fp2, "%d,%f,%f,%f,%f\n", step, E_POT, E_KIN, E, VIRIAL);
-
-            get_params({E_POT, E_KIN, E, VIRIAL}, params);
-            fprintf(fp4, "%f,%f,%f\n", params.x, params.y, params.z);
-        }
+            snap = true;
+#ifndef __INTELLISENSE__
+        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, N, dt, device_e, snap);
+#endif
+        if (step % snap_steps == 0)
+            snapshot(particles, energy, parameters);
+        snap = false;
     }
 
     cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
@@ -389,13 +409,16 @@ int main()
     for (int i = 0; i < N; i++)
     {
         v2 = host_v[i].x * host_v[i].x + host_v[i].y * host_v[i].y + host_v[i].z * host_v[i].z;
-        fprintf(fp3, "%f,%f,%f,%f\n", host_v[i].x, host_v[i].y, host_v[i].z, v2);
+        velocity << host_v[i].x << ",";
+        velocity << host_v[i].y << ",";
+        velocity << host_v[i].z << ",";
+        velocity << v2 << endl;
     }
 
-    fclose(fp);
-    fclose(fp2);
-    fclose(fp3);
-    fclose(fp4);
+    particles.close();
+    energy.close();
+    velocity.close();
+    parameters.close();
 
     cudaFree(device_q);
     cudaFree(device_v);
