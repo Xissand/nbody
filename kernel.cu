@@ -349,16 +349,16 @@ void get_params(float4 e, float4& params)
 void snapshot(ofstream& particles, ofstream& energy, ofstream& parameters)
 {
     float E = 0, E_KIN = 0, E_POT = 0, VIRIAL = 0;
-    cudaMemcpy(host_q, device_q, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+    //cudaMemcpy(host_q, device_q, sizeof(float4) * N, cudaMemcpyDeviceToHost);
     cudaMemcpy(host_e, device_e, sizeof(float4) * N, cudaMemcpyDeviceToHost);
 
     particles << N << endl << endl;
 
     for (int i = 0; i < N; i++)
     {
-        particles << host_q[i].x << " ";
-        particles << host_q[i].y << " ";
-        particles << host_q[i].z << endl;
+        //particles << host_q[i].x << " ";
+        //particles << host_q[i].y << " ";
+        //particles << host_q[i].z << endl;
 
         E += host_e[i].z;
         E_POT += host_e[i].x;

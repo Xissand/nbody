@@ -7,7 +7,7 @@ constexpr int cell_size = 8;
 #define LENNARD_JONES_POTENTIAL
 
 constexpr int total_steps = 1e6;
-constexpr int snap_steps = 5;
+constexpr int snap_steps = 50;
 constexpr float dt = 1e-6; 
 
 constexpr int BLOCK_SIZE = 128;
