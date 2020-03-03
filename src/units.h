@@ -6,7 +6,7 @@ constexpr int cell_size = 8;
 #define PERIODIC_BOUNDARIES
 #define LENNARD_JONES_POTENTIAL
 
-constexpr int total_steps = 1e6;
+constexpr int total_steps = 1e3;
 constexpr int snap_steps = 50;
 constexpr float dt = 1e-6; 
 

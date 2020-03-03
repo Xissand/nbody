@@ -301,6 +301,8 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
     d_e[j] = e;
 }
 
+void load() {}
+
 void generate()
 {
     int grid_size = (int) truncf(2 * cell_size / (cbrtf(N)));
@@ -349,16 +351,16 @@ void get_params(float4 e, float4& params)
 void snapshot(ofstream& particles, ofstream& energy, ofstream& parameters)
 {
     float E = 0, E_KIN = 0, E_POT = 0, VIRIAL = 0;
-    //cudaMemcpy(host_q, device_q, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_q, device_q, sizeof(float4) * N, cudaMemcpyDeviceToHost);
     cudaMemcpy(host_e, device_e, sizeof(float4) * N, cudaMemcpyDeviceToHost);
 
     particles << N << endl << endl;
 
     for (int i = 0; i < N; i++)
     {
-        //particles << host_q[i].x << " ";
-        //particles << host_q[i].y << " ";
-        //particles << host_q[i].z << endl;
+        particles << host_q[i].x << " ";
+        particles << host_q[i].y << " ";
+        particles << host_q[i].z << endl;
 
         E += host_e[i].z;
         E_POT += host_e[i].x;
@@ -396,12 +398,12 @@ int main()
 
     generate();
 
-    ofstream particles("particles.xyz");
-    ofstream energy("gpue.csv");
+    ofstream particles("data/particles.xyz");
+    ofstream energy("data/gpue.csv");
     energy << "t,Potential,Kinetic,Total,Virial" << endl;
-    ofstream velocity("gpuv.csv");
+    ofstream velocity("data/gpuv.csv");
     velocity << "vx,vy,vz,v" << endl;
-    ofstream parameters("gpuparam.csv");
+    ofstream parameters("data/gpuparam.csv");
     parameters << "P,V,T" << endl;
 
     cudaMemcpy(device_q, host_q, sizeof(float4) * N, cudaMemcpyHostToDevice);
