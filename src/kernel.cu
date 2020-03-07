@@ -35,8 +35,8 @@ __device__ void get_force(float4 qi, float4 qj, Molecule moli, float3& fi)
     r.y = qi.y - qj.y;
     r.z = qi.z - qj.z;
 
-    if (r.x == 0 && r.y == 0 && r.z == 0)
-        return;
+    /*if (r.x == 0 && r.y == 0 && r.z == 0)
+        return;*/
 
 #ifdef PERIODIC_BOUNDARIES
     /*if (r.x > cell_size)
@@ -92,8 +92,8 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
     r.y = qi.y - qj.y;
     r.z = qi.z - qj.z;
 
-    if (r.x == 0 && r.y == 0 && r.z == 0)
-        return;
+    /*if (r.x == 0 && r.y == 0 && r.z == 0)
+        return;*/
 
 #ifdef PERIODIC_BOUNDARIES
     /*if (r.x > cell_size)
@@ -154,8 +154,8 @@ __device__ void get_potential(float4 qi, float4 qj, Molecule moli, float4& e)
     r.y = qi.y - qj.y;
     r.z = qi.z - qj.z;
 
-    if (r.x == 0 && r.y == 0 && r.z == 0)
-        return;
+    /*if (r.x == 0 && r.y == 0 && r.z == 0)
+        return;*/
 
 #ifdef PERIODIC_BOUNDARIES
     /*if (r.x > cell_size)
@@ -229,6 +229,8 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
         __syncthreads();
         for (int k = 0; k < BLOCK_SIZE; k++)
         {
+            if(k+i==j)
+                continue;
             // if()
             get_force(q, shared_q[k], mol, f);
             if (snap)
