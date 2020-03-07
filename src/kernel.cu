@@ -5,9 +5,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <string>
-#include <iomanip>
 
 using namespace std;
 
@@ -39,7 +39,7 @@ __device__ void get_force(float4 qi, float4 qj, Molecule moli, float3& fi)
         return;
 
 #ifdef PERIODIC_BOUNDARIES
-    if (r.x > cell_size)
+    /*if (r.x > cell_size)
         r.x -= 2 * cell_size;
     if (r.x <= -cell_size)
         r.x += 2 * cell_size;
@@ -50,7 +50,11 @@ __device__ void get_force(float4 qi, float4 qj, Molecule moli, float3& fi)
     if (r.z > cell_size)
         r.z -= 2 * cell_size;
     if (r.z <= -cell_size)
-        r.z += 2 * cell_size;
+        r.z += 2 * cell_size;*/
+
+    r.x -= roundf(r.x / (2 * cell_size)) * (2 * cell_size);
+    r.y -= roundf(r.y / (2 * cell_size)) * (2 * cell_size);
+    r.z -= roundf(r.z / (2 * cell_size)) * (2 * cell_size);
 #endif
 
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
@@ -92,7 +96,7 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
         return;
 
 #ifdef PERIODIC_BOUNDARIES
-    if (r.x > cell_size)
+    /*if (r.x > cell_size)
         r.x -= 2 * cell_size;
     if (r.x <= -cell_size)
         r.x += 2 * cell_size;
@@ -103,7 +107,11 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
     if (r.z > cell_size)
         r.z -= 2 * cell_size;
     if (r.z <= -cell_size)
-        r.z += 2 * cell_size;
+        r.z += 2 * cell_size;*/
+
+    r.x -= roundf(r.x / (2 * cell_size)) * (2 * cell_size);
+    r.y -= roundf(r.y / (2 * cell_size)) * (2 * cell_size);
+    r.z -= roundf(r.z / (2 * cell_size)) * (2 * cell_size);
 #endif
 
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
@@ -150,7 +158,7 @@ __device__ void get_potential(float4 qi, float4 qj, Molecule moli, float4& e)
         return;
 
 #ifdef PERIODIC_BOUNDARIES
-    if (r.x > cell_size)
+    /*if (r.x > cell_size)
         r.x -= 2 * cell_size;
     if (r.x <= -cell_size)
         r.x += 2 * cell_size;
@@ -161,7 +169,10 @@ __device__ void get_potential(float4 qi, float4 qj, Molecule moli, float4& e)
     if (r.z > cell_size)
         r.z -= 2 * cell_size;
     if (r.z <= -cell_size)
-        r.z += 2 * cell_size;
+        r.z += 2 * cell_size;*/
+    r.x -= roundf(r.x / (2 * cell_size)) * (2 * cell_size);
+    r.y -= roundf(r.y / (2 * cell_size)) * (2 * cell_size);
+    r.z -= roundf(r.z / (2 * cell_size)) * (2 * cell_size);
 #endif
 
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
@@ -218,7 +229,7 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
         __syncthreads();
         for (int k = 0; k < BLOCK_SIZE; k++)
         {
-            //if()
+            // if()
             get_force(q, shared_q[k], mol, f);
             if (snap)
             {
@@ -237,9 +248,9 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
     a.z = f.z / m;
 
     float a2 = a.x * a.x + a.y * a.y + a.z * a.z;
-   /* if (snap)
-        if (a2 != 0)
-            printf("%f\n", sqrt(a2));*/
+    /* if (snap)
+         if (a2 != 0)
+             printf("%f\n", sqrt(a2));*/
 
     v.x += a.x * dt;
     v.y += a.y * dt;
@@ -252,23 +263,23 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
     q.z += v.z * dt;
 
 #ifdef PERIODIC_BOUNDARIES
-    if (q.x > cell_size)
-        q.x -= 2 * cell_size;
-    if ((-q.x) > cell_size)
-        q.x += 2 * cell_size;
-    if (q.y > cell_size)
-        q.y -= 2 * cell_size;
-    if ((-q.y) > cell_size)
-        q.y += 2 * cell_size;
-    if (q.z > cell_size)
-        q.z -= 2 * cell_size;
-    if ((-q.z) > cell_size)
-        q.z += 2 * cell_size;
+    /* if (q.x > cell_size)
+         q.x -= 2 * cell_size;
+     if ((-q.x) > cell_size)
+         q.x += 2 * cell_size;
+     if (q.y > cell_size)
+         q.y -= 2 * cell_size;
+     if ((-q.y) > cell_size)
+         q.y += 2 * cell_size;
+     if (q.z > cell_size)
+         q.z -= 2 * cell_size;
+     if ((-q.z) > cell_size)
+         q.z += 2 * cell_size;*/
 #endif
 
-        // e.x += e_pot / 2;
-        // e.y += e_kin;
-        // e.z += e_kin;
+    // e.x += e_pot / 2;
+    // e.y += e_kin;
+    // e.z += e_kin;
 
 // Reflective boundaries
 #ifdef REFLECTIVE_BOUNDARIES

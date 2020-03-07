@@ -8,9 +8,9 @@ constexpr float T_INIT = 100;
 #define PERIODIC_BOUNDARIES
 #define LENNARD_JONES_POTENTIAL
 
-constexpr bool SNAP_XYZ = true;
+constexpr bool SNAP_XYZ = false;
 
-constexpr long long int total_steps = 1e6;
+constexpr long long int total_steps = 1e5;
 constexpr int snap_steps = 500;
 constexpr float dt = 1e-6; 
 
