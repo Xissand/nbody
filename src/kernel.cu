@@ -237,7 +237,7 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
     a.z = f.z / m;
 
     float a2 = a.x * a.x + a.y * a.y + a.z * a.z;
-    /*if (snap)
+   /* if (snap)
         if (a2 != 0)
             printf("%f\n", sqrt(a2));*/
 

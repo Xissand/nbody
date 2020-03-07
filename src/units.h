@@ -1,7 +1,7 @@
 #pragma once
 
-constexpr int N = 8;
-constexpr float cell_size = 1;
+constexpr int N = 512;
+constexpr float cell_size = 4;
 
 constexpr float T_INIT = 100;
 
@@ -10,11 +10,11 @@ constexpr float T_INIT = 100;
 
 constexpr bool SNAP_XYZ = true;
 
-constexpr int total_steps = 3e9;
+constexpr long long int total_steps = 1e6;
 constexpr int snap_steps = 500;
-constexpr float dt = 1e-15; 
+constexpr float dt = 1e-6; 
 
-constexpr int BLOCK_SIZE = 8;
+constexpr int BLOCK_SIZE = 128;
 
 constexpr float NA = 1;
 constexpr float K_B = 1;
