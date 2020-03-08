@@ -65,7 +65,7 @@ __device__ void get_force(float4 qi, float4 qj, Molecule moli, float3& fi)
     float r6 = r4 * r2;
     float r8 = r4 * r4;
 
-    float k = (-(0.5f) + (1.0f / r6)) * 12 / r8;
+    float k = (-(0.5f / r8) + (1.0f / (r6 * r8))) * 12;
     coeff = 4 * moli.EPSILON;
 #endif
 
@@ -209,8 +209,7 @@ __device__ void get_kinetic(float4 v, Molecule mol, float4& e)
     e.z += mol.M * k;
 }
 
-__global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, float dt,
-                       float4* d_e, bool snap)
+__global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, float dt, float4* d_e, bool snap)
 {
     int j = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -229,7 +228,7 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
         __syncthreads();
         for (int k = 0; k < BLOCK_SIZE; k++)
         {
-            if(k+i==j)
+            if (k + i == j)
                 continue;
             // if()
             get_force(q, shared_q[k], mol, f);
@@ -324,6 +323,30 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
     d_e[j] = e;
 }
 
+void thermostat_scale()
+{
+    float E_KIN0 = 0;
+    cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_e, device_e, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < N; i++)
+        // cout << host_e[i].y << endl;
+
+        E_KIN0 += host_e[i].y;
+
+    float T = E_KIN0 * 2 / (3 * N * K_B);
+
+    float coeff = sqrt(T_CONST / T);
+
+    for (int i = 0; i < N; i++)
+    {
+        host_v[i].x *= coeff;
+        host_v[i].y *= coeff;
+        host_v[i].z *= coeff;
+    }
+    cudaMemcpy(device_v, host_v, sizeof(float4) * N, cudaMemcpyHostToDevice);
+}
+
 void generate()
 {
     int limit = (int) truncf(cbrtf(N)) + 1;
@@ -349,12 +372,9 @@ void generate()
 
         float alpha = 0.1; // How much on grid particle are
 
-        host_q[n].x =
-            grid_x * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
-        host_q[n].y =
-            grid_y * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
-        host_q[n].z =
-            grid_z * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].x = grid_x * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].y = grid_y * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].z = grid_z * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
         host_q[n].w = 0;
 
         host_mol[n].set((MOLECULES) DEFAULT);
@@ -381,9 +401,9 @@ void get_params(float4 e, float4& params)
 {
     float P = 0, V = 0, T = 0;
 
-    V = cell_size * cell_size * cell_size;
-    T = e.y * 1 * 2 / 3;
-    P = N * 1 * T / V + e.w / (3 * V);
+    V = 8 * cell_size * cell_size * cell_size;
+    T = e.y * 2 / (3 * N * K_B);
+    P = N * K_B * T / V + e.w / (6 * V);
 
     params = {P, V, T, 0};
 }
@@ -425,7 +445,8 @@ void snapshot(ofstream& particles, ofstream& energy, ofstream& parameters)
     parameters << params.z << endl;
 
     cout << "Step: " << step << " ";
-    cout << setprecision(15) << "Energy: " << E << " ";
+    cout << setprecision(5) << "Energy: " << E << " ";
+    cout << "Pressure: " << params.x << " ";
     cout << "Temperature: " << params.z << endl;
 }
 
@@ -442,6 +463,16 @@ void load_dump(string name)
         dump >> host_v[i].x;
         dump >> host_v[i].y;
         dump >> host_v[i].z;
+
+        dump >> host_e[i].x;
+        dump >> host_e[i].y;
+        dump >> host_e[i].z;
+        dump >> host_e[i].w;
+
+        dump >> host_mol[i].Q;
+        dump >> host_mol[i].M;
+        dump >> host_mol[i].SIGMA;
+        dump >> host_mol[i].EPSILON;
     }
 
     dump.close();
@@ -453,6 +484,8 @@ void create_dump(string name)
 
     cudaMemcpy(host_q, device_q, sizeof(float4) * N, cudaMemcpyDeviceToHost);
     cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_e, device_e, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_mol, device_mol, sizeof(float4) * N, cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < N; i++)
     {
@@ -462,7 +495,17 @@ void create_dump(string name)
 
         dump << host_v[i].x << " ";
         dump << host_v[i].y << " ";
-        dump << host_v[i].z << endl;
+        dump << host_v[i].z << " ";
+
+        dump << host_e[i].x << " ";
+        dump << host_e[i].y << " ";
+        dump << host_e[i].z << " ";
+        dump << host_e[i].w << " ";
+
+        dump << host_mol[i].Q << " ";
+        dump << host_mol[i].M << " ";
+        dump << host_mol[i].SIGMA << " ";
+        dump << host_mol[i].EPSILON << endl;
     }
 
     dump.close();
@@ -481,9 +524,9 @@ int main()
     host_mol = (Molecule*) malloc(sizeof(Molecule) * N);
 
     generate();
-    // load_dump("dump/dump.dat");
+    // load_dump("dump/relaxed.dat");
 
-    ofstream particles("data/particles.xyz");
+    ofstream particles("data/p2.xyz");
     ofstream energy("data/gpue.csv");
     energy << "t,Potential,Kinetic,Total,Virial" << endl;
     ofstream velocity("data/gpuv.csv");
@@ -499,14 +542,17 @@ int main()
     bool snap = false;
     for (step = 0; step < total_steps; step++)
     {
-        if (step % snap_steps == 0)
+        if ((step % snap_steps == 0) || (step % thermo_steps == 0))
             snap = true;
 #ifndef __INTELLISENSE__
-        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e,
-                                               snap);
+        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e, snap);
 #endif
-        if (step % snap_steps == 0)
+        if ((step % thermo_steps == 0) && (step > 0))
             snapshot(particles, energy, parameters);
+
+        if ((step % thermo_steps == 0) && (step < 5e5))
+            thermostat_scale();
+
         snap = false;
 
         /*if(step == 100)
@@ -523,6 +569,8 @@ int main()
         velocity << host_v[i].z << ",";
         velocity << v2 << endl;
     }
+
+    // reate_dump("dump/relaxed.dat");
 
     particles.close();
     energy.close();

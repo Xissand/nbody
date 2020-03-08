@@ -32,7 +32,7 @@ struct Molecule {
             Q = 1;
             M = 1;
             SIGMA = 1;
-            EPSILON = 1e3;
+            EPSILON = 1;
             break;
         default:
             Q = 1;
