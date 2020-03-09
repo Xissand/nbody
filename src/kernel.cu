@@ -35,29 +35,18 @@ __device__ void get_force(float4 qi, float4 qj, Molecule moli, float3& fi)
     r.y = qi.y - qj.y;
     r.z = qi.z - qj.z;
 
-    /*if (r.x == 0 && r.y == 0 && r.z == 0)
-        return;*/
-
 #ifdef PERIODIC_BOUNDARIES
-    /*if (r.x > cell_size)
-        r.x -= 2 * cell_size;
-    if (r.x <= -cell_size)
-        r.x += 2 * cell_size;
-    if (r.y > cell_size)
-        r.y -= 2 * cell_size;
-    if (r.y <= -cell_size)
-        r.y += 2 * cell_size;
-    if (r.z > cell_size)
-        r.z -= 2 * cell_size;
-    if (r.z <= -cell_size)
-        r.z += 2 * cell_size;*/
-
     r.x -= roundf(r.x / (2 * cell_size)) * (2 * cell_size);
     r.y -= roundf(r.y / (2 * cell_size)) * (2 * cell_size);
     r.z -= roundf(r.z / (2 * cell_size)) * (2 * cell_size);
 #endif
 
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
+
+#ifdef LJ_CUT // Cutoff set to half the box length
+    if (r2 > cell_size * cell_size)
+        return;
+#endif
 
 #ifdef LENNARD_JONES_POTENTIAL
     r2 = r2 / (moli.SIGMA * moli.SIGMA);
@@ -92,29 +81,21 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
     r.y = qi.y - qj.y;
     r.z = qi.z - qj.z;
 
-    /*if (r.x == 0 && r.y == 0 && r.z == 0)
-        return;*/
-
 #ifdef PERIODIC_BOUNDARIES
-    /*if (r.x > cell_size)
-        r.x -= 2 * cell_size;
-    if (r.x <= -cell_size)
-        r.x += 2 * cell_size;
-    if (r.y > cell_size)
-        r.y -= 2 * cell_size;
-    if (r.y <= -cell_size)
-        r.y += 2 * cell_size;
-    if (r.z > cell_size)
-        r.z -= 2 * cell_size;
-    if (r.z <= -cell_size)
-        r.z += 2 * cell_size;*/
-
     r.x -= roundf(r.x / (2 * cell_size)) * (2 * cell_size);
     r.y -= roundf(r.y / (2 * cell_size)) * (2 * cell_size);
     r.z -= roundf(r.z / (2 * cell_size)) * (2 * cell_size);
 #endif
 
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
+
+#ifdef LJ_CUT // Cutoff set to half the box length
+    if (r2 >(cell_size * cell_size))
+    {
+        //e.w += 0;//(1/2) * (16 / 3) * M_PI * ro * ro * ((2 / 3) * powf(2.5, -9) - powf(2.5, -3));
+        return;
+    }
+#endif
 
 #ifdef LENNARD_JONES_POTENTIAL
     r2 = r2 / (moli.SIGMA * moli.SIGMA);
@@ -154,28 +135,18 @@ __device__ void get_potential(float4 qi, float4 qj, Molecule moli, float4& e)
     r.y = qi.y - qj.y;
     r.z = qi.z - qj.z;
 
-    /*if (r.x == 0 && r.y == 0 && r.z == 0)
-        return;*/
-
 #ifdef PERIODIC_BOUNDARIES
-    /*if (r.x > cell_size)
-        r.x -= 2 * cell_size;
-    if (r.x <= -cell_size)
-        r.x += 2 * cell_size;
-    if (r.y > cell_size)
-        r.y -= 2 * cell_size;
-    if (r.y <= -cell_size)
-        r.y += 2 * cell_size;
-    if (r.z > cell_size)
-        r.z -= 2 * cell_size;
-    if (r.z <= -cell_size)
-        r.z += 2 * cell_size;*/
     r.x -= roundf(r.x / (2 * cell_size)) * (2 * cell_size);
     r.y -= roundf(r.y / (2 * cell_size)) * (2 * cell_size);
     r.z -= roundf(r.z / (2 * cell_size)) * (2 * cell_size);
 #endif
 
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
+
+#ifdef LJ_CUT // Cutoff set to half the box length
+    if (r2 > cell_size* cell_size)
+        return;
+#endif
 
 #ifdef LENNARD_JONES_POTENTIAL
     r2 = r2 / (moli.SIGMA * moli.SIGMA);
@@ -230,7 +201,7 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
         {
             if (k + i == j)
                 continue;
-            // if()
+
             get_force(q, shared_q[k], mol, f);
             if (snap)
             {
@@ -248,39 +219,14 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
     a.y = f.y / m;
     a.z = f.z / m;
 
-    float a2 = a.x * a.x + a.y * a.y + a.z * a.z;
-    /* if (snap)
-         if (a2 != 0)
-             printf("%f\n", sqrt(a2));*/
-
     v.x += a.x * dt;
     v.y += a.y * dt;
     v.z += a.z * dt;
     __syncthreads();
-    // float e_kin = (v.x * v.x + v.y * v.y + v.z * v.z) / 2.0f;
 
     q.x += v.x * dt;
     q.y += v.y * dt;
     q.z += v.z * dt;
-
-#ifdef PERIODIC_BOUNDARIES
-    /* if (q.x > cell_size)
-         q.x -= 2 * cell_size;
-     if ((-q.x) > cell_size)
-         q.x += 2 * cell_size;
-     if (q.y > cell_size)
-         q.y -= 2 * cell_size;
-     if ((-q.y) > cell_size)
-         q.y += 2 * cell_size;
-     if (q.z > cell_size)
-         q.z -= 2 * cell_size;
-     if ((-q.z) > cell_size)
-         q.z += 2 * cell_size;*/
-#endif
-
-    // e.x += e_pot / 2;
-    // e.y += e_kin;
-    // e.z += e_kin;
 
 // Reflective boundaries
 #ifdef REFLECTIVE_BOUNDARIES
@@ -330,8 +276,6 @@ void thermostat_scale()
     cudaMemcpy(host_e, device_e, sizeof(float4) * N, cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < N; i++)
-        // cout << host_e[i].y << endl;
-
         E_KIN0 += host_e[i].y;
 
     float T = E_KIN0 * 2 / (3 * N * K_B);
@@ -403,7 +347,11 @@ void get_params(float4 e, float4& params)
 
     V = 8 * cell_size * cell_size * cell_size;
     T = e.y * 2 / (3 * N * K_B);
-    P = N * K_B * T / V + e.w / (6 * V);
+    P = N * K_B * T / V + e.w / (6 * V); // TODO: Move fix (1/2) for virial to get_virial
+
+#ifdef LJ_CUT // Cutoff set to half the box length
+    P += (8 / 3) * M_PI * ro * ro * ((2 / 3) * powf(cell_size, -9) - powf(cell_size, -3));
+#endif
 
     params = {P, V, T, 0};
 }
@@ -432,6 +380,10 @@ void snapshot(ofstream& particles, ofstream& energy, ofstream& parameters)
         E_KIN += host_e[i].y;
         VIRIAL += host_e[i].w;
     }
+
+#ifdef LJ_CUT // Cutoff set to half the box length
+    E_POT += (8 / 3) * M_PI * ro * ((1 / 3) * powf(cell_size, -9) - powf(cell_size, -3));
+#endif
 
     energy << step << ",";
     energy << E_POT << ",";
@@ -513,6 +465,7 @@ void create_dump(string name)
 
 int main()
 {
+    cout << ro << endl;
     cudaMalloc(&device_q, sizeof(float4) * N);
     cudaMalloc(&device_v, sizeof(float4) * N);
     cudaMalloc(&device_e, sizeof(float4) * N);
