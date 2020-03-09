@@ -92,7 +92,6 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
 #ifdef LJ_CUT // Cutoff set to half the box length
     if (r2 >(cell_size * cell_size))
     {
-        //e.w += 0;//(1/2) * (16 / 3) * M_PI * ro * ro * ((2 / 3) * powf(2.5, -9) - powf(2.5, -3));
         return;
     }
 #endif
@@ -507,9 +506,6 @@ int main()
             thermostat_scale();
 
         snap = false;
-
-        /*if(step == 100)
-            create_dump("dump/dump.dat");*/
     }
 
     cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
@@ -522,8 +518,6 @@ int main()
         velocity << host_v[i].z << ",";
         velocity << v2 << endl;
     }
-
-    // reate_dump("dump/relaxed.dat");
 
     particles.close();
     energy.close();

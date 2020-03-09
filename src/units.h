@@ -3,7 +3,7 @@
 constexpr int N = 512;
 //constexpr float cell_size = 4;
 
-constexpr float cell_size = 4.742524406; //to= 0.6
+constexpr float cell_size = 4.742524406; //ro= 0.6
 
 constexpr float v = 8 * cell_size * cell_size * cell_size;
 
