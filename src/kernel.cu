@@ -349,7 +349,7 @@ void get_params(float4 e, float4& params)
     P = N * K_B * T / V + e.w / (6 * V); // TODO: Move fix (1/2) for virial to get_virial
 
 #ifdef LJ_CUT // Cutoff set to half the box length
-    P += (8 / 3) * M_PI * ro * ro * ((2 / 3) * powf(cell_size, -9) - powf(cell_size, -3));
+    P += (16 / 3) * M_PI * ro * ro * ((2 / 3) * powf(cell_size, -9) - powf(cell_size, -3));
 #endif
 
     params = {P, V, T, 0};
@@ -391,12 +391,13 @@ void snapshot(ofstream& particles, ofstream& energy, ofstream& parameters)
     energy << VIRIAL << endl;
 
     get_params({E_POT, E_KIN, E, VIRIAL}, params);
+    parameters << setprecision(15);
     parameters << params.x << ",";
     parameters << params.y << ",";
     parameters << params.z << endl;
 
     cout << "Step: " << step << " ";
-    cout << setprecision(5) << "Energy: " << E << " ";
+    cout << setprecision(15) << "Energy: " << E << " ";
     cout << "Pressure: " << params.x << " ";
     cout << "Temperature: " << params.z << endl;
 }
@@ -478,12 +479,14 @@ int main()
     generate();
     // load_dump("dump/relaxed.dat");
 
+    //string off = "research/pressure/dp_N/512.csv";
+
     ofstream particles("data/p2.xyz");
     ofstream energy("data/gpue.csv");
     energy << "t,Potential,Kinetic,Total,Virial" << endl;
     ofstream velocity("data/gpuv.csv");
     velocity << "vx,vy,vz,v" << endl;
-    ofstream parameters("data/gpuparam.csv");
+    ofstream parameters(off);
     parameters << "P,V,T" << endl;
 
     cudaMemcpy(device_q, host_q, sizeof(float4) * N, cudaMemcpyHostToDevice);
@@ -494,16 +497,16 @@ int main()
     bool snap = false;
     for (step = 0; step < total_steps; step++)
     {
-        if ((step % snap_steps == 0) || (step % thermo_steps == 0))
+        if ((step % snap_steps == 0) )//|| (step % thermo_steps == 0))
             snap = true;
 #ifndef __INTELLISENSE__
         evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e, snap);
 #endif
-        if ((step % thermo_steps == 0) && (step > 0))
+        if ((step % snap_steps == 0) && (step > 0))
             snapshot(particles, energy, parameters);
 
-        if ((step % thermo_steps == 0) && (step < 5e5))
-            thermostat_scale();
+        //if ((step % thermo_steps == 0) && (step < 5e5))
+          //  thermostat_scale();
 
         snap = false;
     }
