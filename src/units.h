@@ -44,16 +44,19 @@ constexpr float T_CONST = 2;
 
 #define PERIODIC_BOUNDARIES
 #define LENNARD_JONES_POTENTIAL
-#define LJ_CUT
-std::string off = "research/pressure/cut/new/cut2.csv";
+//#define LJ_CUT
+//std::string off = "research/pressure/cut/new/cut2.csv";
 //std::string off = "research/pressure/cut/new/nocut.csv";
 
-constexpr bool SNAP_XYZ = false;
+std::string off = "part2.xyz";
+//std::string off = "part2.xyz";
 
-constexpr long long int total_steps = 1e6;
-constexpr int snap_steps = 50;
+constexpr bool SNAP_XYZ = true;
+
+constexpr long long int total_steps = 1e5;
+constexpr int snap_steps = 5;
 constexpr int thermo_steps = 10;
-constexpr float dt = 1e-6;
+constexpr float dt = 1e-5;
 
 constexpr int BLOCK_SIZE = 128;
 

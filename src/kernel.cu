@@ -90,7 +90,7 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
 
 #ifdef LJ_CUT // Cutoff set to half the box length
-    if (r2 >(cell_size * cell_size))
+    if (r2 > (cell_size * cell_size))
     {
         return;
     }
@@ -143,7 +143,7 @@ __device__ void get_potential(float4 qi, float4 qj, Molecule moli, float4& e)
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
 
 #ifdef LJ_CUT // Cutoff set to half the box length
-    if (r2 > cell_size* cell_size)
+    if (r2 > cell_size * cell_size)
         return;
 #endif
 
@@ -179,7 +179,8 @@ __device__ void get_kinetic(float4 v, Molecule mol, float4& e)
     e.z += mol.M * k;
 }
 
-__global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, float dt, float4* d_e, bool snap)
+__global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, float dt,
+                       float4* d_e, bool snap)
 {
     int j = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -315,9 +316,12 @@ void generate()
 
         float alpha = 0.1; // How much on grid particle are
 
-        host_q[n].x = grid_x * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
-        host_q[n].y = grid_y * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
-        host_q[n].z = grid_z * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].x =
+            grid_x * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].y =
+            grid_y * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].z =
+            grid_z * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
         host_q[n].w = 0;
 
         host_mol[n].set((MOLECULES) DEFAULT);
@@ -359,7 +363,10 @@ void snapshot(ofstream& particles, ofstream& energy, ofstream& parameters)
 {
     float E = 0, E_KIN = 0, E_POT = 0, VIRIAL = 0;
     if (SNAP_XYZ)
+    {
         cudaMemcpy(host_q, device_q, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+        cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
+    }
     cudaMemcpy(host_e, device_e, sizeof(float4) * N, cudaMemcpyDeviceToHost);
 
     if (SNAP_XYZ)
@@ -369,9 +376,14 @@ void snapshot(ofstream& particles, ofstream& energy, ofstream& parameters)
     {
         if (SNAP_XYZ)
         {
+            parameters << setprecision(15);
             particles << host_q[i].x << " ";
             particles << host_q[i].y << " ";
-            particles << host_q[i].z << endl;
+            particles << host_q[i].z << " ";
+
+            particles << host_v[i].x << " ";
+            particles << host_v[i].y << " ";
+            particles << host_v[i].z << endl;
         }
 
         E += host_e[i].z;
@@ -479,14 +491,12 @@ int main()
     generate();
     // load_dump("dump/relaxed.dat");
 
-    //string off = "research/pressure/dp_N/512.csv";
-
-    ofstream particles("data/p2.xyz");
+    ofstream particles(off);
     ofstream energy("data/gpue.csv");
     energy << "t,Potential,Kinetic,Total,Virial" << endl;
     ofstream velocity("data/gpuv.csv");
     velocity << "vx,vy,vz,v" << endl;
-    ofstream parameters(off);
+    ofstream parameters("data/gpuparam.csv");
     parameters << "P,V,T" << endl;
 
     cudaMemcpy(device_q, host_q, sizeof(float4) * N, cudaMemcpyHostToDevice);
@@ -497,16 +507,17 @@ int main()
     bool snap = false;
     for (step = 0; step < total_steps; step++)
     {
-        if ((step % snap_steps == 0) )//|| (step % thermo_steps == 0))
+        if ((step % snap_steps == 0)) //|| (step % thermo_steps == 0))
             snap = true;
 #ifndef __INTELLISENSE__
-        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e, snap);
+        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e,
+                                               snap);
 #endif
         if ((step % snap_steps == 0) && (step > 0))
             snapshot(particles, energy, parameters);
 
-        //if ((step % thermo_steps == 0) && (step < 5e5))
-          //  thermostat_scale();
+        // if ((step % thermo_steps == 0) && (step < 5e5))
+        //  thermostat_scale();
 
         snap = false;
     }
