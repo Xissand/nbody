@@ -1,9 +1,10 @@
 #Custom
-*.xyz
+*.xyz 
+*.sh
 .vscode/
 .ipynb_checkpoints/
 dump/
-*.sh
+build/
 
 # Prerequisites
 *.d
