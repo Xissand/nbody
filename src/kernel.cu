@@ -179,8 +179,7 @@ __device__ void get_kinetic(float4 v, Molecule mol, float4& e)
     e.z += mol.M * k;
 }
 
-__global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, float dt,
-                       float4* d_e, bool snap)
+__global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, float dt, float4* d_e, bool snap)
 {
     int j = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -316,12 +315,9 @@ void generate()
 
         float alpha = 0.1; // How much on grid particle are
 
-        host_q[n].x =
-            grid_x * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
-        host_q[n].y =
-            grid_y * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
-        host_q[n].z =
-            grid_z * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].x = grid_x * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].y = grid_y * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].z = grid_z * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
         host_q[n].w = 0;
 
         host_mol[n].set((MOLECULES) DEFAULT);
@@ -342,6 +338,52 @@ void generate()
 
         grid[grid_x][grid_y][grid_z] = true;
     }
+}
+
+void generate_fcc()
+{
+    int limit = 4;//(int) (cbrtf(N / 4));
+    float grid_size = (2 * cell_size / limit);
+
+    for (int grid_x = 0; grid_x < limit; grid_x++)
+        for (int grid_y = 0; grid_y < limit; grid_y++)
+            for (int grid_z = 0; grid_z < limit; grid_z++)
+            {
+                int n = grid_x * limit * limit + grid_y * limit + grid_z;
+
+                host_q[n * 4].x = grid_x * grid_size;
+                host_q[n * 4].y = grid_y * grid_size;
+                host_q[n * 4].z = grid_z * grid_size;
+                host_q[n * 4].w = 0;
+
+                host_q[n * 4 + 1].x = grid_x * grid_size + 0.5 * grid_size;
+                host_q[n * 4 + 1].y = grid_y * grid_size + 0.5 * grid_size;
+                host_q[n * 4 + 1].z = grid_z * grid_size;
+                host_q[n * 4 + 1].w = 0;
+
+                host_q[n * 4 + 2].x = grid_x * grid_size + 0.5 * grid_size;
+                host_q[n * 4 + 2].y = grid_y * grid_size;
+                host_q[n * 4 + 2].z = grid_z * grid_size + 0.5 * grid_size;
+                host_q[n * 4 + 2].w = 0;
+
+                host_q[n * 4 + 3].x = grid_x * grid_size;
+                host_q[n * 4 + 3].y = grid_y * grid_size + 0.5 * grid_size;
+                host_q[n * 4 + 3].z = grid_z * grid_size + 0.5 * grid_size;
+                host_q[n * 4 + 3].w = 0;
+
+                for (int i = 0; i < 4; i++)
+                {
+                    host_mol[n * 4 + i].set((MOLECULES) DEFAULT);
+
+                    // Rms for Maxwell disftibution is (3kT/m)**0.5, for rand is 1
+                    float velocity_coeff = sqrt((3 * K_B * T_INIT) / host_mol[n].M);
+
+                    host_v[n * 4 + i].x = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 4 + i].y = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 4 + i].z = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 4 + i].w = 1;
+                }
+            }
 }
 
 void get_params(float4 e, float4& params)
@@ -408,10 +450,10 @@ void snapshot(ofstream& particles, ofstream& energy, ofstream& parameters)
     parameters << params.y << ",";
     parameters << params.z << endl;
 
-    cout << "Step: " << step << " ";
-    cout << setprecision(15) << "Energy: " << E << " ";
-    cout << "Pressure: " << params.x << " ";
-    cout << "Temperature: " << params.z << endl;
+    std::cout << "Step: " << step << " ";
+    std::cout << setprecision(15) << "Energy: " << E << " ";
+    std::cout << "Pressure: " << params.x << " ";
+    std::cout << "Temperature: " << params.z << endl;
 }
 
 void load_dump(string name)
@@ -477,7 +519,7 @@ void create_dump(string name)
 
 int main()
 {
-    cout << ro << endl;
+    std::cout << ro << endl;
     cudaMalloc(&device_q, sizeof(float4) * N);
     cudaMalloc(&device_v, sizeof(float4) * N);
     cudaMalloc(&device_e, sizeof(float4) * N);
@@ -488,10 +530,11 @@ int main()
     host_e = (float4*) malloc(sizeof(float4) * N);
     host_mol = (Molecule*) malloc(sizeof(Molecule) * N);
 
-    generate();
-    // load_dump("dump/relaxed.dat");
+    // generate();
+    // generate_fcc();
+    load_dump("liquid.dat");
 
-    ofstream particles(off);
+    ofstream particles("liquid.xyz");
     ofstream energy("data/gpue.csv");
     energy << "t,Potential,Kinetic,Total,Virial" << endl;
     ofstream velocity("data/gpuv.csv");
@@ -507,20 +550,21 @@ int main()
     bool snap = false;
     for (step = 0; step < total_steps; step++)
     {
-        if ((step % snap_steps == 0)) //|| (step % thermo_steps == 0))
+        if ((step % snap_steps == 0))// || (step % thermo_steps == 0))
             snap = true;
 #ifndef __INTELLISENSE__
-        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e,
-                                               snap);
+        evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e, snap);
 #endif
         if ((step % snap_steps == 0) && (step > 0))
             snapshot(particles, energy, parameters);
 
         // if ((step % thermo_steps == 0) && (step < 5e5))
-        //  thermostat_scale();
+        //    thermostat_scale();
 
         snap = false;
     }
+
+    //create_dump("gas.dat");
 
     cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
     float v2 = 0;
