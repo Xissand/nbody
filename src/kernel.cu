@@ -278,6 +278,10 @@ void thermostat_scale()
         E_KIN0 += host_e[i].y;
 
     float T = E_KIN0 * 2 / (3 * N * K_B);
+    
+    T_CONST = T_INIT * (1.0-((float)step/total_steps));
+
+    cout << T_CONST << endl;
 
     float coeff = sqrt(T_CONST / T);
 
@@ -530,16 +534,17 @@ int main()
     host_e = (float4*) malloc(sizeof(float4) * N);
     host_mol = (Molecule*) malloc(sizeof(Molecule) * N);
 
-    // generate();
+    //generate();
     // generate_fcc();
-    load_dump("liquid.dat");
+    load_dump("research/glass/start.dat");
+    //create_dump("glass.dat");
 
-    ofstream particles("liquid.xyz");
-    ofstream energy("data/gpue.csv");
+    ofstream particles("research/glass/glass.xyz");
+    ofstream energy("research/glass/energy.csv");
     energy << "t,Potential,Kinetic,Total,Virial" << endl;
     ofstream velocity("data/gpuv.csv");
     velocity << "vx,vy,vz,v" << endl;
-    ofstream parameters("data/gpuparam.csv");
+    ofstream parameters("research/glass/params.csv");
     parameters << "P,V,T" << endl;
 
     cudaMemcpy(device_q, host_q, sizeof(float4) * N, cudaMemcpyHostToDevice);
@@ -550,7 +555,7 @@ int main()
     bool snap = false;
     for (step = 0; step < total_steps; step++)
     {
-        if ((step % snap_steps == 0))// || (step % thermo_steps == 0))
+        if ((step % snap_steps == 0) || (step % thermo_steps == 0))
             snap = true;
 #ifndef __INTELLISENSE__
         evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e, snap);
@@ -558,13 +563,13 @@ int main()
         if ((step % snap_steps == 0) && (step > 0))
             snapshot(particles, energy, parameters);
 
-        // if ((step % thermo_steps == 0) && (step < 5e5))
-        //    thermostat_scale();
+         if ((step % thermo_steps == 0) && (step < total_steps))
+            thermostat_scale();
 
         snap = false;
     }
 
-    //create_dump("gas.dat");
+    //create_dump("research/glass/start.dat");
 
     cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
     float v2 = 0;
