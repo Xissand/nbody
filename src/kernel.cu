@@ -451,7 +451,7 @@ void generate()
 
 void generate_fcc()
 {
-    int limit = 4; //(int) (cbrtf(N / 4));
+    int limit = 8; //(int) (cbrtf(N / 4));
     float grid_size = (2 * cell_size / limit);
 
     for (int grid_x = 0; grid_x < limit; grid_x++)
@@ -639,8 +639,8 @@ int main()
     host_e = (float4*) malloc(sizeof(float4) * N);
     host_mol = (Molecule*) malloc(sizeof(Molecule) * N);
 
-     generate();
-    //generate_fcc();
+    //generate();
+    generate_fcc();
     //load_dump("research/glass/start.dat");
     // create_dump("glass.dat");
 

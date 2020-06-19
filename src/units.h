@@ -1,12 +1,14 @@
 #pragma once
 #include <string>
 
+//constexpr int N = 256;
+//constexpr float cell_size = 3.174802104; //ro=1
 
-constexpr int N = 512;
-constexpr float cell_size = 4.0f; //ro=0.98
+//constexpr int N = 512;
+//constexpr float cell_size = 4.0f; //ro=1
 
-//constexpr int N = 2048;
-//constexpr float cell_size = 6.349604208; //ro=0.98
+constexpr int N = 2048;
+constexpr float cell_size = 6.349604208; //ro=1
 //16.108111388
 constexpr float v = 8 * cell_size * cell_size * cell_size;
 
@@ -33,10 +35,10 @@ constexpr bool SNAP_XYZ = false;
 //constexpr int thermo_steps = 5000;
 //constexpr float dt = 1e-4;
 
-constexpr long long int total_steps = 30e5;
+constexpr long long int total_steps = 6e5;
 constexpr int snap_steps = 1000;
 constexpr int thermo_steps = 0;
-constexpr float dt = 1e-5;
+constexpr float dt = 5e-5;
 
 constexpr int BLOCK_SIZE = 128;
 
