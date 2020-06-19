@@ -48,14 +48,30 @@ __device__ void get_force(float4 qi, float4 qj, Molecule moli, float3& fi)
         return;
 #endif
 
+    float k = 0;
+
 #ifdef LENNARD_JONES_POTENTIAL
     r2 = r2 / (moli.SIGMA * moli.SIGMA);
     float r4 = r2 * r2;
     float r6 = r4 * r2;
     float r8 = r4 * r4;
 
-    float k = (-(0.5f / r8) + (1.0f / (r6 * r8))) * 12;
-    coeff = 4 * moli.EPSILON;
+    k += 4 * moli.EPSILON * (-(0.5f / r8) + (1.0f / (r6 * r8))) * 12;
+#endif
+
+#ifdef EAM_POTENTIAL
+    float r_mod = sqrtf(r2);
+    
+    float df = BETA * expf(-BETA * (r_mod - 1));
+    float dens = qi.w*qj.w / (Z0*Z0);
+
+    
+    k+= ALPHA * 0.5 * df * logf(dens) / r_mod;
+
+
+    k+= ALPHA * BETA * (r_mod - 1)* df / r_mod;
+
+    
 #endif
 
 #ifdef COULOMB_POTENTIAL
@@ -65,14 +81,48 @@ __device__ void get_force(float4 qi, float4 qj, Molecule moli, float3& fi)
     float r_mod = sqrtf(r2);
     float r3 = r_mod * r_mod * r_mod;
 
-    float k += 1.0f / r3;
+    k += 1.0f / r3;
 #endif
 
-    fi.x += r.x * coeff * k;
-    fi.y += r.y * coeff * k;
-    fi.z += r.z * coeff * k;
+    fi.x += r.x * k;
+    fi.y += r.y * k;
+    fi.z += r.z * k;
 }
 
+__device__ void get_densities(float4 qi, float4 qj, float& dens)
+{
+    float3 r;
+    float coeff = 1;
+    r.x = qi.x - qj.x;
+    r.y = qi.y - qj.y;
+    r.z = qi.z - qj.z;
+
+#ifdef PERIODIC_BOUNDARIES
+    r.x -= roundf(r.x / (2 * cell_size)) * (2 * cell_size);
+    r.y -= roundf(r.y / (2 * cell_size)) * (2 * cell_size);
+    r.z -= roundf(r.z / (2 * cell_size)) * (2 * cell_size);
+#endif
+
+    float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
+    float r_mod = sqrtf(r2);
+
+#ifdef LJ_CUT // Cutoff set to half the box length
+    if (r2 > (cell_size * cell_size))
+    {
+        return;
+    }
+#endif
+
+    coeff = -BETA * (r_mod - 1);
+    float k = expf(coeff);
+
+    //printf("%f\n", r_mod);
+
+    dens += k;
+}
+
+
+// TODO: IMPLEMENT EAM
 __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
 {
     float3 r;
@@ -160,6 +210,19 @@ __device__ void get_potential(float4 qi, float4 qj, Molecule moli, float4& e)
     e.z += p / 2.0f;
 #endif
 
+#ifdef EAM_POTENTIAL
+    float r_mod = sqrtf(r2); 
+    //float f_comp = ALPHA * 0.5 * qi.w * (logf(qi.w) - logf(Z0) - 1);
+    float ex = -BETA * (r_mod - 1);
+    float f_pair = - ALPHA * 0.5 * expf(ex)*(ex - 1);
+    
+   // printf("%f %f\n",f_comp, f_pair);
+
+    e.x += f_pair; // + f_comp / (N - 1);
+    e.z += f_pair; // + f_comp / (N - 1);
+
+#endif
+
 #ifdef COULOMB_POTENTIAL
     if (r2 < 0.0001)
         r2 = 0.0001;
@@ -179,6 +242,37 @@ __device__ void get_kinetic(float4 v, Molecule mol, float4& e)
     e.z += mol.M * k;
 }
 
+__global__ void evolve_densities(float4* d_q, int N_BODIES)
+{
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    __shared__ float4 shared_q[BLOCK_SIZE];
+    float4 q = d_q[j];
+    float dens = 0;
+
+    for (int i = 0; i < N_BODIES; i += BLOCK_SIZE)
+    {
+        shared_q[threadIdx.x] = d_q[i + threadIdx.x];
+        __syncthreads();
+        for (int k = 0; k < BLOCK_SIZE; k++)
+        {
+            if (k + i == j)
+                continue;
+
+            get_densities(q, shared_q[k], dens);
+        }
+    }
+
+    q.w = dens;
+    __syncthreads();
+
+    d_q[j] = q;
+
+
+    //printf("%f\n",q.w);
+}
+
+
 __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, float dt, float4* d_e, bool snap)
 {
     int j = blockIdx.x * blockDim.x + threadIdx.x;
@@ -191,6 +285,7 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
     float3 f = {0.0f, 0.0f, 0.0f};
     float3 a = {0.0f, 0.0f, 0.0f};
     float e_pot = 0;
+
 
     for (int i = 0; i < N_BODIES; i += BLOCK_SIZE)
     {
@@ -221,11 +316,21 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
     v.x += a.x * dt;
     v.y += a.y * dt;
     v.z += a.z * dt;
+
     __syncthreads();
+
+    #ifdef EAM_POTENTIAL
+    float f_comp = ALPHA * 0.5 * q.w * (logf(q.w) - logf(Z0) - 1);
+
+    e.x+=f_comp;
+    e.z+=f_comp;
+    #endif
+
 
     q.x += v.x * dt;
     q.y += v.y * dt;
     q.z += v.z * dt;
+    q.w = 0;
 
 // Reflective boundaries
 #ifdef REFLECTIVE_BOUNDARIES
@@ -278,8 +383,8 @@ void thermostat_scale()
         E_KIN0 += host_e[i].y;
 
     float T = E_KIN0 * 2 / (3 * N * K_B);
-    
-    T_CONST = T_INIT * (1.0-((float)step/total_steps));
+
+    T_CONST = T_INIT * (1.0 - ((float) step / total_steps));
 
     cout << T_CONST << endl;
 
@@ -346,7 +451,7 @@ void generate()
 
 void generate_fcc()
 {
-    int limit = 4;//(int) (cbrtf(N / 4));
+    int limit = 4; //(int) (cbrtf(N / 4));
     float grid_size = (2 * cell_size / limit);
 
     for (int grid_x = 0; grid_x < limit; grid_x++)
@@ -534,17 +639,17 @@ int main()
     host_e = (float4*) malloc(sizeof(float4) * N);
     host_mol = (Molecule*) malloc(sizeof(Molecule) * N);
 
-    //generate();
-    // generate_fcc();
-    load_dump("research/glass/start.dat");
-    //create_dump("glass.dat");
+     generate();
+    //generate_fcc();
+    //load_dump("research/glass/start.dat");
+    // create_dump("glass.dat");
 
-    ofstream particles("research/glass/glass.xyz");
-    ofstream energy("research/glass/energy.csv");
+    ofstream particles("research/eam/eam.xyz");
+    ofstream energy("research/eam/energy.csv");
     energy << "t,Potential,Kinetic,Total,Virial" << endl;
     ofstream velocity("data/gpuv.csv");
     velocity << "vx,vy,vz,v" << endl;
-    ofstream parameters("research/glass/params.csv");
+    ofstream parameters("research/eam/params.csv");
     parameters << "P,V,T" << endl;
 
     cudaMemcpy(device_q, host_q, sizeof(float4) * N, cudaMemcpyHostToDevice);
@@ -555,21 +660,24 @@ int main()
     bool snap = false;
     for (step = 0; step < total_steps; step++)
     {
-        if ((step % snap_steps == 0) || (step % thermo_steps == 0))
+        if ((step % snap_steps == 0) )//|| (step % thermo_steps == 0))
             snap = true;
 #ifndef __INTELLISENSE__
+    #ifdef EAM_POTENTIAL
+        evolve_densities<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, N);
+    #endif
         evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e, snap);
 #endif
         if ((step % snap_steps == 0) && (step > 0))
             snapshot(particles, energy, parameters);
 
-         if ((step % thermo_steps == 0) && (step < total_steps))
-            thermostat_scale();
+        //if ((step % thermo_steps == 0) && (step < total_steps))
+        //    thermostat_scale();
 
         snap = false;
     }
 
-    //create_dump("research/glass/start.dat");
+    create_dump("research/eam/start.dat");
 
     cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
     float v2 = 0;
