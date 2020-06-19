@@ -60,18 +60,15 @@ __device__ void get_force(float4 qi, float4 qj, Molecule moli, float3& fi)
 #endif
 
 #ifdef EAM_POTENTIAL
-    float r_mod = sqrtf(r2);
-    
+    float r_mod = sqrtf(r2) * powf(2, -1/6);
+
     float df = BETA * expf(-BETA * (r_mod - 1));
-    float dens = qi.w*qj.w / (Z0*Z0);
+    float dens = qi.w * qj.w / (Z0 * Z0);///qj.w;
 
-    
-    k+= ALPHA * 0.5 * df * logf(dens) / r_mod;
+    k += powf(2, -1/6)* ALPHA * 0.5 * df * logf(dens) / r_mod;
 
+    k += powf(2, -1/6)* ALPHA * BETA * (r_mod - 1) * df / r_mod;
 
-    k+= ALPHA * BETA * (r_mod - 1)* df / r_mod;
-
-    
 #endif
 
 #ifdef COULOMB_POTENTIAL
@@ -104,7 +101,7 @@ __device__ void get_densities(float4 qi, float4 qj, float& dens)
 #endif
 
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
-    float r_mod = sqrtf(r2);
+    float r_mod = sqrtf(r2) * powf(2, -1/6);
 
 #ifdef LJ_CUT // Cutoff set to half the box length
     if (r2 > (cell_size * cell_size))
@@ -116,11 +113,10 @@ __device__ void get_densities(float4 qi, float4 qj, float& dens)
     coeff = -BETA * (r_mod - 1);
     float k = expf(coeff);
 
-    //printf("%f\n", r_mod);
+    // printf("%f\n", r_mod);
 
     dens += k;
 }
-
 
 // TODO: IMPLEMENT EAM
 __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
@@ -145,7 +141,7 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
         return;
     }
 #endif
-
+float k = 0;
 #ifdef LENNARD_JONES_POTENTIAL
     r2 = r2 / (moli.SIGMA * moli.SIGMA);
     float r4 = r2 * r2;
@@ -153,7 +149,7 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
     float r8 = r4 * r4;
 
     coeff = 4 * moli.SIGMA;
-    float k = (-(0.5f) + (1.0f / r6)) * 12 / r8;
+     k = (-(0.5f) + (1.0f / r6)) * 12 / r8;
 #endif
 
 #ifdef COULOMB_POTENTIAL
@@ -163,7 +159,7 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
     float r_mod = sqrtf(r2);
     float r3 = r_mod * r_mod * r_mod;
 
-    float k += 1.0f / r3;
+    k += 1.0f / r3;
 #endif
 
     float3 temp;
@@ -211,12 +207,12 @@ __device__ void get_potential(float4 qi, float4 qj, Molecule moli, float4& e)
 #endif
 
 #ifdef EAM_POTENTIAL
-    float r_mod = sqrtf(r2); 
-    //float f_comp = ALPHA * 0.5 * qi.w * (logf(qi.w) - logf(Z0) - 1);
+    float r_mod = sqrtf(r2)  * powf(2, -1/6);
+    // float f_comp = ALPHA * 0.5 * qi.w * (logf(qi.w) - logf(Z0) - 1);
     float ex = -BETA * (r_mod - 1);
-    float f_pair = - ALPHA * 0.5 * expf(ex)*(ex - 1);
-    
-   // printf("%f %f\n",f_comp, f_pair);
+    float f_pair = -ALPHA * 0.5 * expf(ex) * (ex - 1);
+
+    // printf("%f %f\n",f_comp, f_pair);
 
     e.x += f_pair; // + f_comp / (N - 1);
     e.z += f_pair; // + f_comp / (N - 1);
@@ -268,10 +264,8 @@ __global__ void evolve_densities(float4* d_q, int N_BODIES)
 
     d_q[j] = q;
 
-
-    //printf("%f\n",q.w);
+    // printf("%f\n",q.w);
 }
-
 
 __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, float dt, float4* d_e, bool snap)
 {
@@ -285,7 +279,6 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
     float3 f = {0.0f, 0.0f, 0.0f};
     float3 a = {0.0f, 0.0f, 0.0f};
     float e_pot = 0;
-
 
     for (int i = 0; i < N_BODIES; i += BLOCK_SIZE)
     {
@@ -319,13 +312,12 @@ __global__ void evolve(float4* d_q, float4* d_v, Molecule* d_mol, int N_BODIES, 
 
     __syncthreads();
 
-    #ifdef EAM_POTENTIAL
+#ifdef EAM_POTENTIAL
     float f_comp = ALPHA * 0.5 * q.w * (logf(q.w) - logf(Z0) - 1);
 
-    e.x+=f_comp;
-    e.z+=f_comp;
-    #endif
-
+    e.x += f_comp;
+    e.z += f_comp;
+#endif
 
     q.x += v.x * dt;
     q.y += v.y * dt;
@@ -384,9 +376,9 @@ void thermostat_scale()
 
     float T = E_KIN0 * 2 / (3 * N * K_B);
 
-    T_CONST = T_INIT * (1.0 - ((float) step / total_steps));
+    //T_CONST = T_INIT * (1.0 - ((float) step / total_steps));
 
-    cout << T_CONST << endl;
+    // cout << T_CONST << endl;
 
     float coeff = sqrt(T_CONST / T);
 
@@ -422,7 +414,7 @@ void generate()
             continue;
         }
 
-        float alpha = 0.1; // How much on grid particle are
+        float alpha = 0.000; // How much on grid particle are
 
         host_q[n].x = grid_x * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
         host_q[n].y = grid_y * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
@@ -451,7 +443,7 @@ void generate()
 
 void generate_fcc()
 {
-    int limit = 8; //(int) (cbrtf(N / 4));
+    int limit = 4; //(int) (cbrtf(N / 4));
     float grid_size = (2 * cell_size / limit);
 
     for (int grid_x = 0; grid_x < limit; grid_x++)
@@ -491,6 +483,108 @@ void generate_fcc()
                     host_v[n * 4 + i].y = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
                     host_v[n * 4 + i].z = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
                     host_v[n * 4 + i].w = 1;
+                }
+            }
+}
+
+void generate_bcc()
+{
+    int limit = 8; //(int) (cbrtf(N / 4));
+    float grid_size = (2 * cell_size / limit);
+
+    for (int grid_x = 0; grid_x < limit; grid_x++)
+        for (int grid_y = 0; grid_y < limit; grid_y++)
+            for (int grid_z = 0; grid_z < limit; grid_z++)
+            {
+                int n = grid_x * limit * limit + grid_y * limit + grid_z;
+
+                host_q[n * 2].x = grid_x * grid_size;
+                host_q[n * 2].y = grid_y * grid_size;
+                host_q[n * 2].z = grid_z * grid_size;
+                host_q[n * 2].w = 0;
+
+                host_q[n * 2 + 1].x = grid_x * grid_size + 0.5 * grid_size;
+                host_q[n * 2 + 1].y = grid_y * grid_size + 0.5 * grid_size;
+                host_q[n * 2 + 1].z = grid_z * grid_size + 0.5 * grid_size;
+                host_q[n * 2 + 1].w = 0;
+
+                for (int i = 0; i < 2; i++)
+                {
+                    host_mol[n * 2 + i].set((MOLECULES) DEFAULT);
+
+                    // Rms for Maxwell disftibution is (3kT/m)**0.5, for rand is 1
+                    float velocity_coeff = sqrt((3 * K_B * T_INIT) / host_mol[n].M);
+
+                    host_v[n * 2 + i].x = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 2 + i].y = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 2 + i].z = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 2 + i].w = 1;
+                }
+            }
+}
+
+void generate_dc()
+{
+    int limit = 4; //(int) (cbrtf(N / 4));
+    float grid_size = (2 * cell_size / limit);
+
+    for (int grid_x = 0; grid_x < limit; grid_x++)
+        for (int grid_y = 0; grid_y < limit; grid_y++)
+            for (int grid_z = 0; grid_z < limit; grid_z++)
+            {
+                int n = grid_x * limit * limit + grid_y * limit + grid_z;
+
+                host_q[n * 8].x = grid_x * grid_size;
+                host_q[n * 8].y = grid_y * grid_size;
+                host_q[n * 8].z = grid_z * grid_size;
+                host_q[n * 8].w = 0;
+
+                host_q[n * 8 + 1].x = grid_x * grid_size + 0.5 * grid_size;
+                host_q[n * 8 + 1].y = grid_y * grid_size + 0.5 * grid_size;
+                host_q[n * 8 + 1].z = grid_z * grid_size;
+                host_q[n * 8 + 1].w = 0;
+
+                host_q[n * 8 + 2].x = grid_x * grid_size + 0.5 * grid_size;
+                host_q[n * 8 + 2].y = grid_y * grid_size;
+                host_q[n * 8 + 2].z = grid_z * grid_size + 0.5 * grid_size;
+                host_q[n * 8 + 2].w = 0;
+
+                host_q[n * 8 + 3].x = grid_x * grid_size;
+                host_q[n * 8 + 3].y = grid_y * grid_size + 0.5 * grid_size;
+                host_q[n * 8 + 3].z = grid_z * grid_size + 0.5 * grid_size;
+                host_q[n * 8 + 3].w = 0;
+
+                host_q[n * 8 + 4].x = grid_x * grid_size + 0.75 * grid_size;
+                host_q[n * 8 + 4].y = grid_y * grid_size + 0.75 * grid_size;
+                host_q[n * 8 + 4].z = grid_z * grid_size + 0.75 * grid_size;
+                host_q[n * 8 + 4].w = 0;
+
+                host_q[n * 8 + 5].x = grid_x * grid_size + 0.75 * grid_size;
+                host_q[n * 8 + 5].y = grid_y * grid_size + 0.25 * grid_size;
+                host_q[n * 8 + 5].z = grid_z * grid_size + 0.25 * grid_size;
+                host_q[n * 8 + 5].w = 0;
+
+                host_q[n * 8 + 6].x = grid_x * grid_size + 0.25 * grid_size;
+                host_q[n * 8 + 6].y = grid_y * grid_size + 0.75 * grid_size;
+                host_q[n * 8 + 6].z = grid_z * grid_size + 0.25 * grid_size;
+                host_q[n * 8 + 6].w = 0;
+
+                host_q[n * 8 + 7].x = grid_x * grid_size + 0.25 * grid_size;
+                host_q[n * 8 + 7].y = grid_y * grid_size + 0.25 * grid_size;
+                host_q[n * 8 + 7].z = grid_z * grid_size + 0.75 * grid_size;
+                host_q[n * 8 + 7].w = 0;
+
+                for (int i = 0; i < 8; i++)
+                {
+                    host_mol[n * 8 + i].set((MOLECULES) DEFAULT);
+
+                    // Rms for Maxwell disftibution is (3kT/m)**0.5, for rand is 1
+                    float velocity_coeff = sqrt((3 * K_B * T_INIT) / host_mol[n].M);
+
+                    host_v[n * 8 + i].x = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 8 + i].y = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 8 + i].z = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 8 + i].w = 1;
                 }
             }
 }
@@ -640,8 +734,10 @@ int main()
     host_mol = (Molecule*) malloc(sizeof(Molecule) * N);
 
     //generate();
-    generate_fcc();
-    //load_dump("research/glass/start.dat");
+    //generate_fcc();
+    //generate_bcc();
+    generate_dc();
+    // load_dump("research/glass/start.dat");
     // create_dump("glass.dat");
 
     ofstream particles("research/eam/eam.xyz");
@@ -660,19 +756,19 @@ int main()
     bool snap = false;
     for (step = 0; step < total_steps; step++)
     {
-        if ((step % snap_steps == 0) )//|| (step % thermo_steps == 0))
+        if ((step % snap_steps == 0) )// || (step % thermo_steps == 0))
             snap = true;
 #ifndef __INTELLISENSE__
-    #ifdef EAM_POTENTIAL
+#ifdef EAM_POTENTIAL
         evolve_densities<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, N);
-    #endif
+#endif
         evolve<<<N / BLOCK_SIZE, BLOCK_SIZE>>>(device_q, device_v, device_mol, N, dt, device_e, snap);
 #endif
         if ((step % snap_steps == 0) && (step > 0))
             snapshot(particles, energy, parameters);
 
-        //if ((step % thermo_steps == 0) && (step < total_steps))
-        //    thermostat_scale();
+        //  if ((step % thermo_steps == 0) && (step < total_steps))
+        //      thermostat_scale();
 
         snap = false;
     }
