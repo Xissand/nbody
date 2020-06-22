@@ -44,7 +44,7 @@ __device__ void get_force(float4 qi, float4 qj, Molecule moli, float3& fi)
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
 
 #ifdef LJ_CUT // Cutoff set to half the box length
-    if (r2 > cell_size * cell_size)
+    if (r2 > 2*2)
         return;
 #endif
 
@@ -104,7 +104,7 @@ __device__ void get_densities(float4 qi, float4 qj, float& dens)
     float r_mod = sqrtf(r2) * powf(2, -1/6);
 
 #ifdef LJ_CUT // Cutoff set to half the box length
-    if (r2 > (cell_size * cell_size))
+    if (r2 > (2*2))
     {
         return;
     }
@@ -136,7 +136,7 @@ __device__ void get_virial(float4 qi, float4 qj, Molecule moli, float4& e)
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
 
 #ifdef LJ_CUT // Cutoff set to half the box length
-    if (r2 > (cell_size * cell_size))
+    if (r2 > (2*2))
     {
         return;
     }
@@ -148,8 +148,7 @@ float k = 0;
     float r6 = r4 * r2;
     float r8 = r4 * r4;
 
-    coeff = 4 * moli.SIGMA;
-     k = (-(0.5f) + (1.0f / r6)) * 12 / r8;
+    k = 4 * moli.SIGMA * (-(0.5f) + (1.0f / r6)) * 12 / r8;
 #endif
 
 #ifdef COULOMB_POTENTIAL
@@ -189,7 +188,7 @@ __device__ void get_potential(float4 qi, float4 qj, Molecule moli, float4& e)
     float r2 = r.x * r.x + r.y * r.y + r.z * r.z;
 
 #ifdef LJ_CUT // Cutoff set to half the box length
-    if (r2 > cell_size * cell_size)
+    if (r2 > 2*2)
         return;
 #endif
 
@@ -378,7 +377,10 @@ void thermostat_scale()
 
     //T_CONST = T_INIT * (1.0 - ((float) step / total_steps));
 
-    // cout << T_CONST << endl;
+    //cout << T_CONST << endl;
+
+    if(T==0)
+        return;
 
     float coeff = sqrt(T_CONST / T);
 
@@ -416,9 +418,9 @@ void generate()
 
         float alpha = 0.000; // How much on grid particle are
 
-        host_q[n].x = grid_x * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
-        host_q[n].y = grid_y * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
-        host_q[n].z = grid_z * grid_size + ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].x = grid_x * grid_size; //+ ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].y = grid_y * grid_size; //+ ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
+        host_q[n].z = grid_z * grid_size; //+ ((float) rand() / RAND_MAX) * alpha * grid_size - cell_size;
         host_q[n].w = 0;
 
         host_mol[n].set((MOLECULES) DEFAULT);
@@ -443,7 +445,7 @@ void generate()
 
 void generate_fcc()
 {
-    int limit = 4; //(int) (cbrtf(N / 4));
+    int limit = 8; //(int) (cbrtf(N / 4));
     float grid_size = (2 * cell_size / limit);
 
     for (int grid_x = 0; grid_x < limit; grid_x++)
@@ -486,6 +488,53 @@ void generate_fcc()
                 }
             }
 }
+
+void generate_hex()
+{
+    int limit = 4; //(int) (cbrtf(N / 4));
+    float grid_size = (2 * cell_size / limit);
+
+    for (int grid_x = 0; grid_x < limit; grid_x++)
+        for (int grid_y = 0; grid_y < limit; grid_y++)
+            for (int grid_z = 0; grid_z < limit; grid_z++)
+            {
+                int n = grid_x * limit * limit + grid_y * limit + grid_z;
+
+                host_q[n * 4].x = grid_x * grid_size;
+                host_q[n * 4].y = grid_y * grid_size;
+                host_q[n * 4].z = grid_z * grid_size;
+                host_q[n * 4].w = 0;
+
+                host_q[n * 4 + 1].x = grid_x * grid_size + 0.625 * grid_size;
+                host_q[n * 4 + 1].y = grid_y * grid_size + 0.5 * grid_size;
+                host_q[n * 4 + 1].z = grid_z * grid_size;
+                host_q[n * 4 + 1].w = 0;
+
+                host_q[n * 4 + 2].x = grid_x * grid_size + grid_size / 3;
+                host_q[n * 4 + 2].y = grid_y * grid_size + grid_size / 3;
+                host_q[n * 4 + 2].z = grid_z * grid_size + 0.125 * grid_size;
+                host_q[n * 4 + 2].w = 0;
+
+                host_q[n * 4 + 3].x = grid_x * grid_size + grid_size / 3;
+                host_q[n * 4 + 3].y = grid_y * grid_size + grid_size / 3;
+                host_q[n * 4 + 3].z = grid_z * grid_size + 0.5 * grid_size;
+                host_q[n * 4 + 3].w = 0;
+
+                for (int i = 0; i < 4; i++)
+                {
+                    host_mol[n * 4 + i].set((MOLECULES) DEFAULT);
+
+                    // Rms for Maxwell disftibution is (3kT/m)**0.5, for rand is 1
+                    float velocity_coeff = sqrt((3 * K_B * T_INIT) / host_mol[n].M);
+
+                    host_v[n * 4 + i].x = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 4 + i].y = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 4 + i].z = velocity_coeff * 2 * ((float) rand() / RAND_MAX - 0.5);
+                    host_v[n * 4 + i].w = 1;
+                }
+            }
+}
+
 
 void generate_bcc()
 {
@@ -598,7 +647,7 @@ void get_params(float4 e, float4& params)
     P = N * K_B * T / V + e.w / (6 * V); // TODO: Move fix (1/2) for virial to get_virial
 
 #ifdef LJ_CUT // Cutoff set to half the box length
-    P += (16 / 3) * M_PI * ro * ro * ((2 / 3) * powf(cell_size, -9) - powf(cell_size, -3));
+    P += (16 / 3) * M_PI * ro * ro * ((2 / 3) * powf(2, -9) - powf(2, -3));
 #endif
 
     params = {P, V, T, 0};
@@ -638,9 +687,9 @@ void snapshot(ofstream& particles, ofstream& energy, ofstream& parameters)
     }
 
 #ifdef LJ_CUT // Cutoff set to half the box length
-    E_POT += (8 / 3) * M_PI * ro * ((1 / 3) * powf(cell_size, -9) - powf(cell_size, -3));
+    E_POT += (8 / 3) * M_PI * ro * ((1 / 3) * powf(2, -9) - powf(2, -3));
 #endif
-
+    energy << setprecision(15);
     energy << step << ",";
     energy << E_POT << ",";
     energy << E_KIN << ",";
@@ -664,10 +713,11 @@ void load_dump(string name)
     ifstream dump(name);
 
     for (int i = 0; i < N; i++)
-    {
+    {   
         dump >> host_q[i].x;
         dump >> host_q[i].y;
         dump >> host_q[i].z;
+        dump >> host_q[i].w;
 
         dump >> host_v[i].x;
         dump >> host_v[i].y;
@@ -701,6 +751,7 @@ void create_dump(string name)
         dump << host_q[i].x << " ";
         dump << host_q[i].y << " ";
         dump << host_q[i].z << " ";
+        dump << host_q[i].w << " ";
 
         dump << host_v[i].x << " ";
         dump << host_v[i].y << " ";
@@ -735,12 +786,14 @@ int main()
 
     //generate();
     //generate_fcc();
+    //generate_hex();
     //generate_bcc();
-    generate_dc();
-    // load_dump("research/glass/start.dat");
+    //generate_dc();
+    load_dump("research/eam/start.dat");
     // create_dump("glass.dat");
 
     ofstream particles("research/eam/eam.xyz");
+    //ofstream particles(off);
     ofstream energy("research/eam/energy.csv");
     energy << "t,Potential,Kinetic,Total,Virial" << endl;
     ofstream velocity("data/gpuv.csv");
@@ -756,7 +809,7 @@ int main()
     bool snap = false;
     for (step = 0; step < total_steps; step++)
     {
-        if ((step % snap_steps == 0) )// || (step % thermo_steps == 0))
+        if ((step % snap_steps == 0)  || (step % thermo_steps == 0))
             snap = true;
 #ifndef __INTELLISENSE__
 #ifdef EAM_POTENTIAL
@@ -767,13 +820,13 @@ int main()
         if ((step % snap_steps == 0) && (step > 0))
             snapshot(particles, energy, parameters);
 
-        //  if ((step % thermo_steps == 0) && (step < total_steps))
-        //      thermostat_scale();
+          if ((step % thermo_steps == 0) && (step > 1e10))
+              thermostat_scale();
 
         snap = false;
     }
 
-    create_dump("research/eam/start.dat");
+    //create_dump("research/eam/start.dat");
 
     cudaMemcpy(host_v, device_v, sizeof(float4) * N, cudaMemcpyDeviceToHost);
     float v2 = 0;
